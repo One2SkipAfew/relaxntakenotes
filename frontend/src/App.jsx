@@ -25,6 +25,7 @@ import soundwaveAccent from "./assets/soundwave_accent.png";
 import translationAccent from "./assets/translation_accent.png";
 import processingAccent from "./assets/processing_accent.png";
 import documentAccent from "./assets/document_accent.png";
+import centerpieceImage from "./assets/centerpiece.png";
 
 // Custom Africa Microphone Logo representation
 const AfricaMicLogo = () => (
@@ -64,122 +65,10 @@ const AfricaMicLogo = () => (
   </div>
 );
 
-// Technological Africa Continent Representation (Circuit board style, customized to match provided image with Madagascar)
+// Centerpiece Africa Image Representation with hard-blurred edges
 const TechAfricaContinent = () => (
-  <div className="tech-africa-container" style={{ margin: '0 auto 20px auto', display: 'flex', justifyContent: 'center' }}>
-    <svg width="180" height="180" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <filter id="glow-gold" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="4" result="blur" />
-          <feComposite in="SourceGraphic" in2="blur" operator="over" />
-        </filter>
-      </defs>
-
-      {/* Mask for inside the main continent */}
-      <mask id="main-continent-mask">
-        <path 
-          d="M 60 15 
-             C 50 15, 38 23, 35 32 
-             C 32 41, 38 52, 42 58 
-             C 46 64, 52 75, 56 83 
-             C 58 87, 60 88, 61 85
-             C 64 78, 68 73, 72 68 
-             C 77 63, 83 57, 85 47 
-             C 87 37, 78 23, 73 19 
-             C 70 17, 66 15, 60 15 Z" 
-          fill="#FFFFFF" 
-        />
-      </mask>
-
-      {/* Mask for inside Madagascar */}
-      <mask id="madagascar-mask">
-        <path 
-          d="M 84 64 
-             C 83 66, 83 69, 84 72 
-             C 85 75, 87 77, 88 75 
-             C 89 73, 89 68, 88 66 
-             C 87 64, 85 63, 84 64 Z" 
-          fill="#FFFFFF" 
-        />
-      </mask>
-
-      {/* Main Africa Continent Outline - Thick glowing gold border */}
-      <path 
-        d="M 60 15 
-           C 50 15, 38 23, 35 32 
-           C 32 41, 38 52, 42 58 
-           C 46 64, 52 75, 56 83 
-           C 58 87, 60 88, 61 85
-           C 64 78, 68 73, 72 68 
-           C 77 63, 83 57, 85 47 
-           C 87 37, 78 23, 73 19 
-           C 70 17, 66 15, 60 15 Z" 
-        fill="rgba(4, 6, 14, 0.7)"
-        stroke="#FFB800" 
-        strokeWidth="2.5" 
-        strokeLinejoin="round" 
-        style={{ filter: 'drop-shadow(0 0 6px rgba(255, 184, 0, 0.6))' }}
-      />
-
-      {/* Madagascar Outline - Thick glowing gold border */}
-      <path 
-        d="M 84 64 
-           C 83 66, 83 69, 84 72 
-           C 85 75, 87 77, 88 75 
-           C 89 73, 89 68, 88 66 
-           C 87 64, 85 63, 84 64 Z" 
-        fill="rgba(4, 6, 14, 0.7)"
-        stroke="#FFB800" 
-        strokeWidth="2" 
-        strokeLinejoin="round" 
-        style={{ filter: 'drop-shadow(0 0 4px rgba(255, 184, 0, 0.5))' }}
-      />
-
-      {/* Circuit lines inside Africa (Gold/Orange) */}
-      <g mask="url(#main-continent-mask)" stroke="#FF8C00" strokeWidth="1.2" strokeLinecap="round" opacity="0.85">
-        <line x1="30" y1="35" x2="90" y2="35" />
-        <line x1="30" y1="50" x2="90" y2="50" stroke="#FFB800" />
-        <line x1="40" y1="65" x2="80" y2="65" />
-        <line x1="50" y1="20" x2="50" y2="80" stroke="#FFB800" />
-        <line x1="65" y1="20" x2="65" y2="80" />
-        <line x1="75" y1="25" x2="75" y2="70" />
-
-        <path d="M 40 35 L 50 45 L 50 60 L 60 70 L 65 70" />
-        <path d="M 75 35 L 65 45 L 65 55 L 55 65" stroke="#FFB800" />
-        <path d="M 55 25 L 60 30 L 70 30" />
-        <path d="M 45 50 L 50 55 L 60 55" />
-      </g>
-
-      {/* Circuit lines inside Madagascar */}
-      <g mask="url(#madagascar-mask)" stroke="#FF8C00" strokeWidth="1" strokeLinecap="round" opacity="0.85">
-        <line x1="84" y1="68" x2="88" y2="68" />
-        <path d="M 85 66 L 86 67 L 86 71" />
-      </g>
-
-      {/* Glowing Nodes / Cyan and Orange dots */}
-      <g mask="url(#main-continent-mask)">
-        {/* Main Central Processor node */}
-        <rect x="58" y="44" width="12" height="12" rx="2" fill="rgba(255, 140, 0, 0.15)" stroke="#FF8C00" strokeWidth="1.5" />
-        <circle cx="64" cy="50" r="3.2" fill="#00F0FF" className="pulse-node" />
-        
-        {/* Glowing cyan points */}
-        <circle cx="48" cy="35" r="2" fill="#00F0FF" className="pulse-node" />
-        <circle cx="65" cy="30" r="2.5" fill="#00F0FF" className="pulse-node-delayed" />
-        <circle cx="45" cy="50" r="2" fill="#00F0FF" className="pulse-node" />
-        <circle cx="72" cy="50" r="2.2" fill="#00F0FF" className="pulse-node-delayed" />
-        <circle cx="67" cy="79" r="2" fill="#00F0FF" className="pulse-node" />
-
-        {/* Glowing orange/yellow points */}
-        <circle cx="78" cy="35" r="2" fill="#FFB800" className="pulse-node-delayed" />
-        <circle cx="65" cy="65" r="2.5" fill="#FFB800" className="pulse-node" />
-        <circle cx="56" cy="75" r="2" fill="#FFB800" className="pulse-node-delayed" />
-      </g>
-
-      {/* Glowing Node inside Madagascar */}
-      <g mask="url(#madagascar-mask)">
-        <circle cx="86" cy="68" r="1.5" fill="#00F0FF" className="pulse-node" />
-      </g>
-    </svg>
+  <div className="centerpiece-container">
+    <img src={centerpieceImage} alt="Centerpiece Icon" className="centerpiece-image" />
   </div>
 );
 
@@ -1306,7 +1195,7 @@ export default function App() {
           </div>
           <div className="footer-bottom">
             <div>
-              &copy; {new Date().getFullYear()} <strong>Relax n Take Notes</strong>. All rights reserved.
+              &copy; {new Date().getFullYear()} <strong>From B 2 C (pty) Ltd.</strong> All rights reserved.
             </div>
             <div style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>
               relaxntakenotes.africa

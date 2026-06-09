@@ -453,13 +453,13 @@ a:hover {
   background: var(--bg-primary); /* Uses dark color to stand out on section-blueprint background */
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  padding: 24px;
+  padding: 28px;
   position: relative;
   overflow: hidden;
   transition: var(--transition-normal);
   display: flex;
   flex-direction: column;
-  min-height: 270px;
+  min-height: 340px;
 }
 
 .step-card:hover {
@@ -502,19 +502,19 @@ a:hover {
 
 .step-image-accent {
   width: 100%;
-  height: 60px;
+  height: 120px;
   margin-top: auto;
   border-radius: var(--radius-sm);
   background-size: cover;
   background-position: center;
-  border: 1px solid rgba(255, 255, 255, 0.02);
-  opacity: 0.35;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  opacity: 0.75;
   transition: var(--transition-normal);
 }
 
 .step-card:hover .step-image-accent {
-  opacity: 0.7;
-  border-color: rgba(0, 240, 255, 0.1);
+  opacity: 0.95;
+  border-color: rgba(0, 240, 255, 0.15);
 }
 
 /* Clear Page Break style - Now full-screen and glowing */
@@ -849,14 +849,32 @@ a:hover {
   animation-delay: 1.25s;
 }
 
-.tech-africa-container svg {
-  animation: tech-africa-breathing 4s infinite ease-in-out;
+.centerpiece-container {
+  position: relative;
+  width: 260px;
+  height: 260px;
+  margin: 0 auto 30px auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
-@keyframes tech-africa-breathing {
-  0% { filter: drop-shadow(0 0 10px rgba(255, 184, 0, 0.25)); }
-  50% { filter: drop-shadow(0 0 22px rgba(255, 184, 0, 0.7)); }
-  100% { filter: drop-shadow(0 0 10px rgba(255, 184, 0, 0.25)); }
+.centerpiece-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* Mask gradient to fade/blur the edges out completely so it blends with background #04060E */
+  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 1) 15%, rgba(0, 0, 0, 0.85) 30%, rgba(0, 0, 0, 0) 58%);
+  -webkit-mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 1) 15%, rgba(0, 0, 0, 0.85) 30%, rgba(0, 0, 0, 0) 58%);
+  filter: blur(1.5px) contrast(1.05);
+  animation: centerpiece-pulse 6s infinite ease-in-out;
+}
+
+/* Subtle pulse animation for the centerpiece image to breathe and glow */
+@keyframes centerpiece-pulse {
+  0% { transform: scale(1); filter: blur(1.5px) drop-shadow(0 0 15px rgba(0, 240, 255, 0.1)); }
+  50% { transform: scale(1.03); filter: blur(1.8px) drop-shadow(0 0 25px rgba(0, 240, 255, 0.3)); }
+  100% { transform: scale(1); filter: blur(1.5px) drop-shadow(0 0 15px rgba(0, 240, 255, 0.1)); }
 }
 
 /* Audio Source Selection Options */
