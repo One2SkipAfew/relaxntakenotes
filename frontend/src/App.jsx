@@ -64,6 +64,93 @@ const AfricaMicLogo = () => (
   </div>
 );
 
+// Technological Africa Continent Representation (Circuit/Matrix style)
+const TechAfricaContinent = () => (
+  <div className="tech-africa-container" style={{ margin: '0 auto 24px auto', display: 'flex', justifyContent: 'center' }}>
+    <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="glow-africa" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="3" result="blur" />
+          <feComposite in="SourceGraphic" in2="blur" operator="over" />
+        </filter>
+      </defs>
+
+      {/* Grid Pattern Background within the continent */}
+      <mask id="africa-mask">
+        <path 
+          d="M 60 15 
+             C 50 15, 38 23, 35 32 
+             C 32 41, 38 52, 42 58 
+             C 46 64, 52 75, 56 83 
+             C 58 87, 60 88, 61 85
+             C 64 78, 68 73, 72 68 
+             C 77 63, 83 57, 85 47 
+             C 87 37, 78 23, 73 19 
+             C 70 17, 66 15, 60 15 Z" 
+          fill="#FFFFFF" 
+        />
+      </mask>
+
+      {/* Continent Silhouette Base */}
+      <path 
+        d="M 60 15 
+           C 50 15, 38 23, 35 32 
+           C 32 41, 38 52, 42 58 
+           C 46 64, 52 75, 56 83 
+           C 58 87, 60 88, 61 85
+           C 64 78, 68 73, 72 68 
+           C 77 63, 83 57, 85 47 
+           C 87 37, 78 23, 73 19 
+           C 70 17, 66 15, 60 15 Z" 
+        fill="rgba(0, 240, 255, 0.04)"
+        stroke="rgba(0, 240, 255, 0.45)" 
+        strokeWidth="2" 
+        strokeLinejoin="round" 
+        style={{ filter: 'drop-shadow(0 0 8px rgba(0, 240, 255, 0.3))' }}
+      />
+
+      {/* Tech Circuit Traces (masked inside Africa) */}
+      <g mask="url(#africa-mask)" stroke="rgba(0, 240, 255, 0.35)" strokeWidth="1.2" strokeLinecap="round">
+        <line x1="30" y1="35" x2="90" y2="35" />
+        <line x1="30" y1="50" x2="90" y2="50" />
+        <line x1="40" y1="65" x2="80" y2="65" />
+        
+        <line x1="50" y1="20" x2="50" y2="80" stroke="rgba(138, 43, 226, 0.35)" />
+        <line x1="65" y1="20" x2="65" y2="80" />
+        <line x1="75" y1="25" x2="75" y2="70" stroke="rgba(138, 43, 226, 0.35)" />
+
+        <path d="M 40 35 L 50 45 L 50 60 L 60 70 L 65 70" />
+        <path d="M 75 35 L 65 45 L 65 55 L 55 65" stroke="rgba(138, 43, 226, 0.4)" />
+        <path d="M 55 25 L 60 30 L 70 30" />
+        <path d="M 45 50 L 50 55 L 60 55" />
+      </g>
+
+      {/* Glowing Circuit Nodes / Microchips */}
+      <g mask="url(#africa-mask)">
+        <rect x="58" y="44" width="12" height="12" rx="2" fill="rgba(138, 43, 226, 0.25)" stroke="#8A2BE2" strokeWidth="1.5" />
+        <circle cx="64" cy="50" r="3" fill="#00F0FF" className="pulse-node" />
+        
+        <circle cx="48" cy="35" r="2.5" fill="#00F0FF" className="pulse-node-delayed" />
+        <circle cx="78" cy="35" r="2.5" fill="#8A2BE2" className="pulse-node" />
+        <circle cx="65" cy="30" r="2" fill="#00F0FF" className="pulse-node-delayed" />
+        <circle cx="45" cy="50" r="2.5" fill="#00F0FF" className="pulse-node" />
+        <circle cx="65" cy="65" r="2" fill="#8A2BE2" className="pulse-node-delayed" />
+        <circle cx="56" cy="75" r="2.5" fill="#00F0FF" className="pulse-node" />
+      </g>
+
+      {/* Floating Binary Bits / Data Packets */}
+      <g mask="url(#africa-mask)" fill="rgba(0, 240, 255, 0.65)" fontSize="6" fontFamily="var(--font-heading)" fontWeight="bold">
+        <text x="38" y="28" className="data-packet">1</text>
+        <text x="75" y="25" className="data-packet-delayed">0</text>
+        <text x="80" y="48" className="data-packet">1</text>
+        <text x="40" y="58" className="data-packet-delayed">0</text>
+        <text x="50" y="70" className="data-packet">1</text>
+      </g>
+    </svg>
+  </div>
+);
+
+
 const getApiBaseUrl = () => {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
@@ -285,7 +372,7 @@ export default function App() {
     formData.append("file", audioFile);
 
     try {
-      setProcessingStep("Transcribing via Deepgram. Identifying speakers...");
+      setProcessingStep("Transcribing audio and identifying speakers...");
       const response = await fetch(`${API_BASE_URL}/api/transcribe`, {
         method: "POST",
         headers: {
@@ -526,21 +613,35 @@ export default function App() {
                   <Clock size={14} className="text-teal" />
                   <span>Used: {status.user_usage_minutes} / {status.user_limit_minutes} min (You)</span>
                 </div>
-                <div className={`budget-badge ${status.global_usage_minutes >= status.global_limit_minutes * 0.9 ? 'budget-alert' : ''}`}>
-                  <TrendingUp size={14} className="text-purple" />
-                  <span>Server Quota: {status.global_usage_minutes} / {status.global_limit_minutes} min</span>
-                </div>
               </div>
             </header>
 
             {/* Hero Copy Content */}
             <div style={{ textAlign: "center", maxWidth: "900px", margin: "0 auto" }}>
+              {/* Technological Africa Continent Centerpiece */}
+              <TechAfricaContinent />
+
               <h1 style={{ fontSize: "3.6rem", lineHeight: "1.1", marginBottom: "24px", background: "linear-gradient(135deg, #FFF 40%, var(--accent-cyan) 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
                 Relax, I'll take notes.
               </h1>
               <p style={{ fontSize: "1.2rem", color: "var(--text-secondary)", lineHeight: "1.7", fontWeight: "500" }}>
-                Let's take your voice recordings and turn them into text. Use our feature like Summary or Insights and others to manage the information in the recording. It's safe, fast and free. Record and upload audio files, process the information, manage the information and export when ready. Just upload, process and download. It's that easy!
+                Let's take your voice recordings and turn them into text. Use features such as Summary and Insights, and others, to manage the information in the recording. It's safe, fast and free. Record and upload audio files, process the information, manage the information and export when ready. Just upload, process and download. It's that easy!
               </p>
+              
+              <div style={{ marginTop: "32px" }}>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => {
+                    const el = document.getElementById("workspace");
+                    if (el) {
+                      el.scrollIntoView({ behavior: "smooth" });
+                    }
+                  }}
+                  style={{ padding: "14px 28px", fontSize: "0.9rem", letterSpacing: "0.02em" }}
+                >
+                  Go to Note Synthesis Engine <ArrowRight size={16} />
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -622,10 +723,10 @@ export default function App() {
         <div className="page-break" />
 
         {/* Section 3: Transcription Widget Section */}
-        <section className="section-widget">
+        <section className="section-widget" id="workspace">
           <div className="container">
-            <p className="section-subtitle">AI Note Synthesis Engine</p>
-            <h2 className="section-title">Live Recording & Audio Staging Workspace</h2>
+            <p className="section-subtitle">Note Synthesis Engine</p>
+            <h2 className="section-title">Recording & Audio Staging Workspace</h2>
 
             {!transcript ? (
               <div className="card" style={{ marginTop: "20px" }}>
@@ -880,7 +981,7 @@ export default function App() {
                         <div className="form-group full-width" style={{ marginBottom: 0 }}>
                           <label>Agenda</label>
                           <textarea 
-                            placeholder="e.g. 1. Deepgram API integration&#10;2. UI design system overhaul&#10;3. Free quota budget checks" 
+                            placeholder="e.g. 1. Review project requirements&#10;2. Design system adjustments&#10;3. Final verification checks" 
                             className="form-textarea" 
                             rows="2"
                             value={metadata.meetingAgenda}

@@ -58,11 +58,6 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
-  background-image: 
-    linear-gradient(rgba(255, 255, 255, 0.01) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.01) 1px, transparent 1px);
-  background-size: 40px 40px;
-  background-attachment: fixed;
 }
 
 /* Typography styling with unique fonts */
@@ -126,11 +121,16 @@ a:hover {
 .section-hero {
   background-color: var(--bg-primary);
   padding: 60px 0 80px 0;
+  position: relative;
 }
 
-/* Distinctly shaded background gradient for Blueprint section to isolate it visibly */
+/* Distinctly shaded background with tech grid mesh for Blueprint section */
 .section-blueprint {
-  background: linear-gradient(180deg, #060A18 0%, #0B1126 100%);
+  background-color: #060A18;
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.016) 1px, transparent 1px);
+  background-size: 40px 40px;
   border-top: 1px solid rgba(0, 240, 255, 0.15);
   border-bottom: 1px solid rgba(138, 43, 226, 0.15);
   padding: 80px 0;
@@ -139,7 +139,11 @@ a:hover {
 }
 
 .section-widget {
-  background: linear-gradient(180deg, #04060E 0%, #080D1C 100%);
+  background-color: #04060E;
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px);
+  background-size: 40px 40px;
   border-top: 1px solid rgba(0, 240, 255, 0.15);
   padding: 80px 0;
 }
@@ -804,4 +808,53 @@ a:hover {
 .text-muted-small {
   font-size: 0.7rem;
   color: var(--text-muted);
+}
+
+/* Technological Africa Circuit board / Matrix Animations */
+@keyframes pulse-node-glow {
+  0% { r: 2.5; fill-opacity: 0.7; }
+  50% { r: 4; fill-opacity: 1; }
+  100% { r: 2.5; fill-opacity: 0.7; }
+}
+
+@keyframes pulse-node-purple-glow {
+  0% { r: 2; fill-opacity: 0.7; }
+  50% { r: 3.5; fill-opacity: 1; }
+  100% { r: 2; fill-opacity: 0.7; }
+}
+
+.pulse-node {
+  animation: pulse-node-glow 2s infinite ease-in-out;
+  transform-origin: center;
+}
+
+.pulse-node-delayed {
+  animation: pulse-node-purple-glow 2s infinite ease-in-out;
+  animation-delay: 1s;
+  transform-origin: center;
+}
+
+@keyframes data-packet-float {
+  0% { opacity: 0.2; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-3px); }
+  100% { opacity: 0.2; transform: translateY(0); }
+}
+
+.data-packet {
+  animation: data-packet-float 2.5s infinite ease-in-out;
+}
+
+.data-packet-delayed {
+  animation: data-packet-float 2.5s infinite ease-in-out;
+  animation-delay: 1.25s;
+}
+
+.tech-africa-container svg {
+  animation: tech-africa-breathing 4s infinite ease-in-out;
+}
+
+@keyframes tech-africa-breathing {
+  0% { filter: drop-shadow(0 0 10px rgba(0, 240, 255, 0.2)); }
+  50% { filter: drop-shadow(0 0 20px rgba(0, 240, 255, 0.45)); }
+  100% { filter: drop-shadow(0 0 10px rgba(0, 240, 255, 0.2)); }
 }
