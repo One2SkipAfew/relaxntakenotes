@@ -64,19 +64,19 @@ const AfricaMicLogo = () => (
   </div>
 );
 
-// Technological Africa Continent Representation (Circuit/Matrix style)
+// Technological Africa Continent Representation (Circuit board style, customized to match provided image with Madagascar)
 const TechAfricaContinent = () => (
-  <div className="tech-africa-container" style={{ margin: '0 auto 24px auto', display: 'flex', justifyContent: 'center' }}>
-    <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <div className="tech-africa-container" style={{ margin: '0 auto 20px auto', display: 'flex', justifyContent: 'center' }}>
+    <svg width="180" height="180" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <filter id="glow-africa" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="3" result="blur" />
+        <filter id="glow-gold" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="4" result="blur" />
           <feComposite in="SourceGraphic" in2="blur" operator="over" />
         </filter>
       </defs>
 
-      {/* Grid Pattern Background within the continent */}
-      <mask id="africa-mask">
+      {/* Mask for inside the main continent */}
+      <mask id="main-continent-mask">
         <path 
           d="M 60 15 
              C 50 15, 38 23, 35 32 
@@ -91,7 +91,19 @@ const TechAfricaContinent = () => (
         />
       </mask>
 
-      {/* Continent Silhouette Base */}
+      {/* Mask for inside Madagascar */}
+      <mask id="madagascar-mask">
+        <path 
+          d="M 84 64 
+             C 83 66, 83 69, 84 72 
+             C 85 75, 87 77, 88 75 
+             C 89 73, 89 68, 88 66 
+             C 87 64, 85 63, 84 64 Z" 
+          fill="#FFFFFF" 
+        />
+      </mask>
+
+      {/* Main Africa Continent Outline - Thick glowing gold border */}
       <path 
         d="M 60 15 
            C 50 15, 38 23, 35 32 
@@ -102,49 +114,70 @@ const TechAfricaContinent = () => (
            C 77 63, 83 57, 85 47 
            C 87 37, 78 23, 73 19 
            C 70 17, 66 15, 60 15 Z" 
-        fill="rgba(0, 240, 255, 0.04)"
-        stroke="rgba(0, 240, 255, 0.45)" 
-        strokeWidth="2" 
+        fill="rgba(4, 6, 14, 0.7)"
+        stroke="#FFB800" 
+        strokeWidth="2.5" 
         strokeLinejoin="round" 
-        style={{ filter: 'drop-shadow(0 0 8px rgba(0, 240, 255, 0.3))' }}
+        style={{ filter: 'drop-shadow(0 0 6px rgba(255, 184, 0, 0.6))' }}
       />
 
-      {/* Tech Circuit Traces (masked inside Africa) */}
-      <g mask="url(#africa-mask)" stroke="rgba(0, 240, 255, 0.35)" strokeWidth="1.2" strokeLinecap="round">
+      {/* Madagascar Outline - Thick glowing gold border */}
+      <path 
+        d="M 84 64 
+           C 83 66, 83 69, 84 72 
+           C 85 75, 87 77, 88 75 
+           C 89 73, 89 68, 88 66 
+           C 87 64, 85 63, 84 64 Z" 
+        fill="rgba(4, 6, 14, 0.7)"
+        stroke="#FFB800" 
+        strokeWidth="2" 
+        strokeLinejoin="round" 
+        style={{ filter: 'drop-shadow(0 0 4px rgba(255, 184, 0, 0.5))' }}
+      />
+
+      {/* Circuit lines inside Africa (Gold/Orange) */}
+      <g mask="url(#main-continent-mask)" stroke="#FF8C00" strokeWidth="1.2" strokeLinecap="round" opacity="0.85">
         <line x1="30" y1="35" x2="90" y2="35" />
-        <line x1="30" y1="50" x2="90" y2="50" />
+        <line x1="30" y1="50" x2="90" y2="50" stroke="#FFB800" />
         <line x1="40" y1="65" x2="80" y2="65" />
-        
-        <line x1="50" y1="20" x2="50" y2="80" stroke="rgba(138, 43, 226, 0.35)" />
+        <line x1="50" y1="20" x2="50" y2="80" stroke="#FFB800" />
         <line x1="65" y1="20" x2="65" y2="80" />
-        <line x1="75" y1="25" x2="75" y2="70" stroke="rgba(138, 43, 226, 0.35)" />
+        <line x1="75" y1="25" x2="75" y2="70" />
 
         <path d="M 40 35 L 50 45 L 50 60 L 60 70 L 65 70" />
-        <path d="M 75 35 L 65 45 L 65 55 L 55 65" stroke="rgba(138, 43, 226, 0.4)" />
+        <path d="M 75 35 L 65 45 L 65 55 L 55 65" stroke="#FFB800" />
         <path d="M 55 25 L 60 30 L 70 30" />
         <path d="M 45 50 L 50 55 L 60 55" />
       </g>
 
-      {/* Glowing Circuit Nodes / Microchips */}
-      <g mask="url(#africa-mask)">
-        <rect x="58" y="44" width="12" height="12" rx="2" fill="rgba(138, 43, 226, 0.25)" stroke="#8A2BE2" strokeWidth="1.5" />
-        <circle cx="64" cy="50" r="3" fill="#00F0FF" className="pulse-node" />
-        
-        <circle cx="48" cy="35" r="2.5" fill="#00F0FF" className="pulse-node-delayed" />
-        <circle cx="78" cy="35" r="2.5" fill="#8A2BE2" className="pulse-node" />
-        <circle cx="65" cy="30" r="2" fill="#00F0FF" className="pulse-node-delayed" />
-        <circle cx="45" cy="50" r="2.5" fill="#00F0FF" className="pulse-node" />
-        <circle cx="65" cy="65" r="2" fill="#8A2BE2" className="pulse-node-delayed" />
-        <circle cx="56" cy="75" r="2.5" fill="#00F0FF" className="pulse-node" />
+      {/* Circuit lines inside Madagascar */}
+      <g mask="url(#madagascar-mask)" stroke="#FF8C00" strokeWidth="1" strokeLinecap="round" opacity="0.85">
+        <line x1="84" y1="68" x2="88" y2="68" />
+        <path d="M 85 66 L 86 67 L 86 71" />
       </g>
 
-      {/* Floating Binary Bits / Data Packets */}
-      <g mask="url(#africa-mask)" fill="rgba(0, 240, 255, 0.65)" fontSize="6" fontFamily="var(--font-heading)" fontWeight="bold">
-        <text x="38" y="28" className="data-packet">1</text>
-        <text x="75" y="25" className="data-packet-delayed">0</text>
-        <text x="80" y="48" className="data-packet">1</text>
-        <text x="40" y="58" className="data-packet-delayed">0</text>
-        <text x="50" y="70" className="data-packet">1</text>
+      {/* Glowing Nodes / Cyan and Orange dots */}
+      <g mask="url(#main-continent-mask)">
+        {/* Main Central Processor node */}
+        <rect x="58" y="44" width="12" height="12" rx="2" fill="rgba(255, 140, 0, 0.15)" stroke="#FF8C00" strokeWidth="1.5" />
+        <circle cx="64" cy="50" r="3.2" fill="#00F0FF" className="pulse-node" />
+        
+        {/* Glowing cyan points */}
+        <circle cx="48" cy="35" r="2" fill="#00F0FF" className="pulse-node" />
+        <circle cx="65" cy="30" r="2.5" fill="#00F0FF" className="pulse-node-delayed" />
+        <circle cx="45" cy="50" r="2" fill="#00F0FF" className="pulse-node" />
+        <circle cx="72" cy="50" r="2.2" fill="#00F0FF" className="pulse-node-delayed" />
+        <circle cx="67" cy="79" r="2" fill="#00F0FF" className="pulse-node" />
+
+        {/* Glowing orange/yellow points */}
+        <circle cx="78" cy="35" r="2" fill="#FFB800" className="pulse-node-delayed" />
+        <circle cx="65" cy="65" r="2.5" fill="#FFB800" className="pulse-node" />
+        <circle cx="56" cy="75" r="2" fill="#FFB800" className="pulse-node-delayed" />
+      </g>
+
+      {/* Glowing Node inside Madagascar */}
+      <g mask="url(#madagascar-mask)">
+        <circle cx="86" cy="68" r="1.5" fill="#00F0FF" className="pulse-node" />
       </g>
     </svg>
   </div>
@@ -621,9 +654,12 @@ export default function App() {
               {/* Technological Africa Continent Centerpiece */}
               <TechAfricaContinent />
 
-              <h1 style={{ fontSize: "3.6rem", lineHeight: "1.1", marginBottom: "24px", background: "linear-gradient(135deg, #FFF 40%, var(--accent-cyan) 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              <h1 style={{ fontSize: "3.6rem", lineHeight: "1.1", marginBottom: "12px", background: "linear-gradient(135deg, #FFF 40%, var(--accent-cyan) 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
                 Relax, I'll take notes.
               </h1>
+              <h2 style={{ fontSize: "1.4rem", color: "var(--accent-cyan)", fontFamily: "var(--font-heading)", fontWeight: "600", marginTop: "0", marginBottom: "24px", letterSpacing: "0.01em" }}>
+                Africa's AI Powered Speech-to-Text and Speech-to-Text-to-Speech
+              </h2>
               <p style={{ fontSize: "1.2rem", color: "var(--text-secondary)", lineHeight: "1.7", fontWeight: "500" }}>
                 Let's take your voice recordings and turn them into text. Use features such as Summary and Insights, and others, to manage the information in the recording. It's safe, fast and free. Record and upload audio files, process the information, manage the information and export when ready. Just upload, process and download. It's that easy!
               </p>
@@ -780,26 +816,36 @@ export default function App() {
                       <label>Audio Source</label>
                       
                       {!audioFile && !isRecording ? (
-                        <div 
-                          className="recording-widget"
-                          onClick={() => document.getElementById("file-input").click()}
-                          onDragOver={handleDragOver}
-                          onDragLeave={handleDragLeave}
-                          onDrop={handleDrop}
-                          style={{ flexGrow: 1 }}
-                        >
-                          <button className="mic-button" onClick={(e) => { e.stopPropagation(); startRecording(); }}>
-                            <Mic />
-                          </button>
-                          <h3 style={{ marginBottom: "2px", fontSize: "0.8rem", textAlign: "center" }}>Click to Record or Drag Audio File</h3>
-                          <p className="text-muted-small" style={{ textAlign: "center" }}>Supports MP3, WAV, WebM. Max {status.max_recording_duration_minutes} min.</p>
-                          <input 
-                            id="file-input" 
-                            type="file" 
-                            accept="audio/*" 
-                            style={{ display: "none" }} 
-                            onChange={handleFileSelect} 
-                          />
+                        <div className="audio-source-options">
+                          {/* Option 1: Record Live */}
+                          <div 
+                            className="audio-option-btn btn-record"
+                            onClick={startRecording}
+                          >
+                            <Mic size={22} style={{ marginBottom: "4px" }} />
+                            <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>Record Live</span>
+                            <span className="text-muted-small" style={{ fontSize: "0.65rem", marginTop: "2px" }}>Capture from microphone</span>
+                          </div>
+                          
+                          {/* Option 2: Upload File */}
+                          <div 
+                            className="audio-option-btn btn-upload"
+                            onClick={() => document.getElementById("file-input").click()}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                          >
+                            <Upload size={22} style={{ marginBottom: "4px" }} />
+                            <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>Upload Audio</span>
+                            <span className="text-muted-small" style={{ fontSize: "0.65rem", marginTop: "2px" }}>Drag & drop or browse</span>
+                            <input 
+                              id="file-input" 
+                              type="file" 
+                              accept="audio/*" 
+                              style={{ display: "none" }} 
+                              onChange={handleFileSelect} 
+                            />
+                          </div>
                         </div>
                       ) : isRecording ? (
                         <div className="recording-widget" style={{ borderColor: "var(--error)", background: "rgba(239, 68, 68, 0.01)", flexGrow: 1 }}>
@@ -1240,7 +1286,7 @@ export default function App() {
                 Relax n Take Notes
               </div>
               <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", lineHeight: "1.4", maxWidth: "450px" }}>
-                AI-powered note-taking and high-speed audio transcription built for Analysts, Project Managers, Content Creators, Designers, Writers, Students and Teachers.
+                AI-powered note-taking and high-speed audio transcription built for the people, by the people.
               </p>
             </div>
             <div className="footer-column">
