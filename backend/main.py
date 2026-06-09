@@ -252,7 +252,7 @@ async def generate_ai_features(payload: AIFeaturesRequest):
     # Set up Prompts based on features requested
     if payload.feature_type == "summary":
         system_prompt = (
-            "You are an expert secretary and AI note-taker. "
+            "You are an expert AI note-taking and note-synthesizing assistant. "
             "Generate a highly structured summary of the provided transcript. "
             "Include a concise executive summary, followed by formal meeting minutes with timestamp references (if applicable), "
             "and list the main topics discussed. Use bullet points and clean markdown formatting."

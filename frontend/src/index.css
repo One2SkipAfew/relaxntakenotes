@@ -1,15 +1,15 @@
-/* Redesigned Design System: Cold, Flat-Glossy, Clean & Highly Compact Splited Layout */
+/* Redesigned Design System: Colder, Glossy, Unique Typography & Section Folds */
 
 :root {
-  --font-body: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  --font-heading: 'Outfit', system-ui, sans-serif;
+  --font-body: 'Sora', system-ui, -apple-system, sans-serif;
+  --font-heading: 'Space Grotesk', system-ui, sans-serif;
 
   /* Color Palette: Colder, Flatter, Metallic Dark Grays & Blues */
   --bg-primary: #04060E;
-  --bg-secondary: #0A0E1A;
-  --bg-tertiary: #11172A;
-  --bg-glass: rgba(10, 14, 26, 0.75);
-  --bg-glass-hover: rgba(17, 23, 42, 0.9);
+  --bg-secondary: #0A0F24;
+  --bg-tertiary: #121936;
+  --bg-glass: rgba(10, 15, 30, 0.75);
+  --bg-glass-hover: rgba(18, 25, 48, 0.9);
 
   --text-primary: #F8FAFC;
   --text-secondary: #94A3B8;
@@ -22,8 +22,8 @@
   --accent-blue: #3B82F6;
   --accent-blue-glow: rgba(59, 130, 246, 0.15);
 
-  --border-color: rgba(255, 255, 255, 0.05);
-  --border-glow: rgba(0, 240, 255, 0.12);
+  --border-color: rgba(255, 255, 255, 0.06);
+  --border-glow: rgba(0, 240, 255, 0.18);
   --border-focus: #00F0FF;
 
   --success: #10B981;
@@ -33,12 +33,12 @@
   --transition-fast: 0.15s cubic-bezier(0.16, 1, 0.3, 1);
   --transition-normal: 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   
-  --shadow-lg: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
-  --shadow-glow: 0 0 30px rgba(0, 240, 255, 0.15);
+  --shadow-lg: 0 10px 30px -10px rgba(0, 0, 0, 0.8);
+  --shadow-glow: 0 0 35px rgba(0, 240, 255, 0.18);
   
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
   --radius-full: 9999px;
 }
 
@@ -53,11 +53,11 @@ body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-body);
-  line-height: 1.5;
+  font-size: 1.05rem; /* Increased copy base size */
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
-  /* Thin grid paper background pattern */
   background-image: 
     linear-gradient(rgba(255, 255, 255, 0.01) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.01) 1px, transparent 1px);
@@ -65,7 +65,7 @@ body {
   background-attachment: fixed;
 }
 
-/* Typography styling */
+/* Typography styling with unique fonts */
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
   font-weight: 700;
@@ -74,6 +74,7 @@ h1, h2, h3, h4, h5, h6 {
 
 p {
   color: var(--text-secondary);
+  font-size: 1rem; /* Increased default paragraph size */
 }
 
 a {
@@ -98,7 +99,7 @@ a:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 0;
+  padding: 24px 0;
   border-bottom: 1px solid var(--border-color);
   margin-bottom: 30px;
 }
@@ -109,10 +110,9 @@ a:hover {
   align-items: center;
   gap: 12px;
   font-family: var(--font-heading);
-  font-weight: 800;
-  font-size: 1.25rem;
+  font-weight: 700;
+  font-size: 1.4rem;
   color: var(--text-primary);
-  letter-spacing: -0.03em;
   cursor: pointer;
 }
 
@@ -120,6 +120,28 @@ a:hover {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Section-Specific Background Folds to aid the Page Break request */
+.section-hero {
+  background-color: var(--bg-primary);
+  padding: 60px 0 80px 0;
+}
+
+/* Distinctly shaded background gradient for Blueprint section to isolate it visibly */
+.section-blueprint {
+  background: linear-gradient(180deg, #060A18 0%, #0B1126 100%);
+  border-top: 1px solid rgba(0, 240, 255, 0.15);
+  border-bottom: 1px solid rgba(138, 43, 226, 0.15);
+  padding: 80px 0;
+  box-shadow: inset 0 20px 40px rgba(0, 0, 0, 0.6), inset 0 -20px 40px rgba(0, 0, 0, 0.6);
+  position: relative;
+}
+
+.section-widget {
+  background: linear-gradient(180deg, #04060E 0%, #080D1C 100%);
+  border-top: 1px solid rgba(0, 240, 255, 0.15);
+  padding: 80px 0;
 }
 
 /* Flatter, Colder Glossy Cards */
@@ -159,8 +181,8 @@ a:hover {
   justify-content: center;
   gap: 8px;
   font-family: var(--font-heading);
-  font-weight: 600;
-  font-size: 0.85rem;
+  font-weight: 700;
+  font-size: 0.8rem;
   padding: 10px 18px;
   border-radius: var(--radius-sm);
   border: none;
@@ -217,12 +239,11 @@ a:hover {
 .form-group label {
   display: block;
   font-family: var(--font-heading);
-  font-weight: 600;
+  font-weight: 700;
   font-size: 0.75rem;
   margin-bottom: 6px;
   color: var(--text-primary);
   text-transform: uppercase;
-  letter-spacing: 0.02em;
 }
 
 .form-input, .form-select, .form-textarea {
@@ -243,7 +264,7 @@ a:hover {
   box-shadow: 0 0 10px rgba(0, 240, 255, 0.15);
 }
 
-/* Split Widget Grid (EASY TO USE!) */
+/* Split Widget Grid */
 .widget-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -252,7 +273,7 @@ a:hover {
 
 @media(min-width: 768px) {
   .widget-grid {
-    grid-template-columns: 2fr 3fr; /* 40% left column, 60% right column */
+    grid-template-columns: 2fr 3fr;
   }
 }
 
@@ -332,12 +353,6 @@ a:hover {
   box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
 }
 
-@keyframes pulse-recording {
-  0% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.05); opacity: 0.9; }
-  100% { transform: scale(1); opacity: 1; }
-}
-
 /* Sound Wave Animation */
 .wave-container {
   display: flex;
@@ -368,29 +383,48 @@ a:hover {
   100% { transform: scaleY(3); height: 8px; }
 }
 
-/* Features Blueprint Grid */
+/* Dynamic Metadata Grid */
+.metadata-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+@media(min-width: 768px) {
+  .metadata-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .full-width {
+    grid-column: span 2;
+  }
+}
+
+/* Features blueprint styles */
 .features-guide {
-  margin-top: 40px;
-  margin-bottom: 40px;
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 .section-subtitle {
   font-family: var(--font-heading);
-  font-size: 0.7rem;
+  font-size: 1.25rem; /* Increased size as requested! */
   color: var(--accent-cyan);
-  margin-bottom: 4px;
-  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+  letter-spacing: 0.08em;
   text-align: center;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
 .section-title {
-  font-size: 1.6rem;
-  margin-bottom: 30px;
+  font-size: 2.4rem; /* Increased from 1.8rem */
+  margin-bottom: 40px;
   text-align: center;
   background: linear-gradient(135deg, var(--text-primary) 60%, var(--accent-cyan) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  font-weight: 700;
 }
 
 .steps-grid {
@@ -412,34 +446,34 @@ a:hover {
 }
 
 .step-card {
-  background: var(--bg-secondary);
+  background: var(--bg-primary); /* Uses dark color to stand out on section-blueprint background */
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  padding: 20px;
+  padding: 24px;
   position: relative;
   overflow: hidden;
   transition: var(--transition-normal);
   display: flex;
   flex-direction: column;
-  min-height: 250px;
+  min-height: 270px;
 }
 
 .step-card:hover {
   transform: translateY(-2px);
   border-color: var(--accent-cyan);
-  box-shadow: 0 8px 16px rgba(0, 240, 255, 0.02);
+  box-shadow: 0 8px 24px rgba(0, 240, 255, 0.04);
 }
 
 .step-icon-wrapper {
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   color: var(--accent-cyan);
   transition: var(--transition-fast);
 }
@@ -450,19 +484,18 @@ a:hover {
 }
 
 .step-title {
-  font-size: 0.85rem;
-  margin-bottom: 6px;
+  font-size: 1.05rem; /* Increased from 0.85rem */
+  margin-bottom: 10px;
   color: var(--text-primary);
   font-weight: 700;
 }
 
 .step-desc {
-  font-size: 0.75rem;
+  font-size: 0.85rem; /* Increased from 0.75rem */
   color: var(--text-secondary);
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
-/* Visual asset placeholders inside step cards */
 .step-image-accent {
   width: 100%;
   height: 60px;
@@ -480,13 +513,14 @@ a:hover {
   border-color: rgba(0, 240, 255, 0.1);
 }
 
-/* Clear Page Break */
+/* Clear Page Break style - Now full-screen and glowing */
 .page-break {
   width: 100%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08) 15%, rgba(0, 240, 255, 0.15) 50%, rgba(255, 255, 255, 0.08) 85%, transparent);
-  margin: 40px 0;
+  background: linear-gradient(90deg, transparent, rgba(138, 43, 226, 0.2) 15%, rgba(0, 240, 255, 0.35) 50%, rgba(138, 43, 226, 0.2) 85%, transparent);
+  margin: 0;
   position: relative;
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.1);
 }
 
 .page-break::after {
@@ -495,12 +529,17 @@ a:hover {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: var(--bg-primary);
-  padding: 0 16px;
+  background: #04060E;
+  padding: 0 20px;
   color: var(--accent-cyan);
   font-family: var(--font-heading);
-  font-size: 0.7rem;
+  font-size: 0.85rem;
   text-shadow: 0 0 10px var(--accent-cyan-glow);
+}
+
+/* Special background adjustments for dividers inside sections */
+.section-blueprint .page-break::after {
+  background: #080D20;
 }
 
 /* Staging Area styling */
@@ -635,7 +674,7 @@ a:hover {
 .footer {
   border-top: 1px solid var(--border-color);
   padding: 30px 0;
-  margin-top: 50px;
+  margin-top: 40px;
   background-color: rgba(4, 6, 14, 0.4);
 }
 
@@ -649,7 +688,7 @@ a:hover {
 
 @media(min-width: 768px) {
   .footer-grid {
-    grid-template-columns: 2fr 1fr 1fr;
+    grid-template-columns: 2fr 1fr; /* 2 columns (Limits + Details) since Company Ack is removed */
   }
 }
 
@@ -667,15 +706,17 @@ a:hover {
   font-size: 0.7rem;
   margin-bottom: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 .footer-column ul {
   list-style: none;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .footer-column li {
-  margin-bottom: 6px;
+  margin-bottom: 0;
 }
 
 .footer-column a {
