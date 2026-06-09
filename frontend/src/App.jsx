@@ -13,31 +13,33 @@ import {
   Volume2, 
   RotateCcw, 
   AlertTriangle,
-  Play,
-  Pause,
   Clock,
   Languages,
   CheckCircle,
-  TrendingUp
+  TrendingUp,
+  Cpu,
+  HelpCircle,
+  HelpCircle as StepsIcon
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 
-// API configuration helper
+// Import visual assets
+import soundwaveAccent from "./assets/soundwave_accent.png";
+import translationAccent from "./assets/translation_accent.png";
+import processingAccent from "./assets/processing_accent.png";
+
 const getApiBaseUrl = () => {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
-  // Fallback depending on where we are running
   if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
     return "http://localhost:7860";
   }
-  // Relational URL for production deployed on same space
   return "";
 };
 
 const API_BASE_URL = getApiBaseUrl();
 
-// Generate or fetch user UUID
 const getOrCreateUserUuid = () => {
   let uuid = localStorage.getItem("x-user-uuid");
   if (!uuid) {
@@ -50,7 +52,6 @@ const getOrCreateUserUuid = () => {
 export default function App() {
   const userUuid = getOrCreateUserUuid();
 
-  // App states
   const [status, setStatus] = useState({
     global_usage_minutes: 0,
     global_limit_minutes: 3500,
@@ -63,7 +64,6 @@ export default function App() {
 
   const [recordingType, setRecordingType] = useState("Meeting/Hearing");
   
-  // Metadata state
   const [metadata, setMetadata] = useState({
     songArtist: "",
     songTitle: "",
@@ -80,19 +80,16 @@ export default function App() {
     memoDate: new Date().toISOString().split("T")[0]
   });
 
-  // Audio & file selection states
   const [audioFile, setAudioFile] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [dragOver, setDragOver] = useState(false);
 
-  // Transcription & Staging states
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStep, setProcessingStep] = useState("");
   const [transcript, setTranscript] = useState("");
   const [documentTitle, setDocumentTitle] = useState("");
   
-  // AI states
   const [aiActiveTab, setAiActiveTab] = useState("summary");
   const [aiSummary, setAiSummary] = useState("");
   const [aiInsights, setAiInsights] = useState("");
@@ -100,18 +97,15 @@ export default function App() {
   const [targetLanguage, setTargetLanguage] = useState("French");
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // TTS states
-  const [ttsVoice, setTtsVoice] = useState("en-US-JennyNeural");
+  const [ttsVoice, setTtsVoice] = useState("en-ZA-LeahNeural");
   const [isTtsSynthesizing, setIsTtsSynthesizing] = useState(false);
   const [ttsAudioUrl, setTtsAudioUrl] = useState(null);
 
-  // References
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const recordingTimerRef = useRef(null);
   const audioPlayerRef = useRef(null);
 
-  // Fetch status on mount
   useEffect(() => {
     fetchStatus();
   }, []);
@@ -132,7 +126,6 @@ export default function App() {
     }
   };
 
-  // Recording handler
   const startRecording = async () => {
     audioChunksRef.current = [];
     setAudioFile(null);
@@ -148,10 +141,8 @@ export default function App() {
 
       mediaRecorderRef.current.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        // Create file object
         const file = new File([audioBlob], "recorded_audio.webm", { type: "audio/webm" });
         setAudioFile(file);
-        // Stop all tracks to release mic
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -161,7 +152,6 @@ export default function App() {
       
       recordingTimerRef.current = setInterval(() => {
         setRecordingDuration(prev => {
-          // Safety cap at max recording minutes
           if (prev >= status.max_recording_duration_minutes * 60) {
             stopRecording();
             return prev;
@@ -186,7 +176,6 @@ export default function App() {
     }
   };
 
-  // File drag & drop
   const handleDragOver = (e) => {
     e.preventDefault();
     setDragOver(true);
@@ -216,7 +205,6 @@ export default function App() {
     }
   };
 
-  // Submit file for transcription
   const handleTranscribe = async () => {
     if (!audioFile) return;
 
@@ -224,7 +212,6 @@ export default function App() {
     setProcessingStep("Uploading audio payload and initiating transcription...");
     setTranscript("");
 
-    // Package metadata context
     let selectedMeta = {};
     let finalTitle = "";
     if (recordingType === "Song") {
@@ -278,7 +265,6 @@ export default function App() {
 
       const data = await response.json();
       
-      // Build speaker-diarized text format
       let transcriptText = "";
       if (data.paragraphs && data.paragraphs.length > 0) {
         transcriptText = data.paragraphs.map(p => `${p.speaker}: ${p.text}`).join("\n\n");
@@ -288,8 +274,6 @@ export default function App() {
       
       setTranscript(transcriptText);
       setIsProcessing(false);
-      
-      // Update limits stats
       fetchStatus();
       
     } catch (err) {
@@ -298,7 +282,6 @@ export default function App() {
     }
   };
 
-  // Generate AI Features
   const triggerAiFeature = async (type) => {
     if (!transcript) return;
     setIsAiLoading(true);
@@ -359,7 +342,6 @@ export default function App() {
     }
   };
 
-  // Text-To-Speech Synthesis
   const handleTtsSynthesis = async () => {
     if (!transcript) return;
     
@@ -369,7 +351,6 @@ export default function App() {
       setTtsAudioUrl(null);
     }
 
-    // Clean transcript text for TTS (remove speaker labels to sound natural)
     const cleanText = transcript.replace(/Speaker \d+:/g, "");
 
     try {
@@ -379,7 +360,7 @@ export default function App() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          text: cleanText.substring(0, 3000), // Limit character length for performance
+          text: cleanText.substring(0, 3000),
           voice: ttsVoice
         })
       });
@@ -398,38 +379,24 @@ export default function App() {
     }
   };
 
-  // Format recording timer
   const formatTime = (secs) => {
     const mins = Math.floor(secs / 60);
     const remainingSecs = secs % 60;
     return `${mins.toString().padStart(2, "0")}:${remainingSecs.toString().padStart(2, "0")}`;
   };
 
-  // Simple custom Markdown parser to avoid large bundles
   const renderMarkdown = (md) => {
     if (!md) return "";
     let html = md;
-    
-    // Header level 3
-    html = html.replace(/^### (.*$)/gim, '<h3 style="font-family: var(--font-heading); color: var(--accent-teal); font-size: 1.1rem; margin: 16px 0 8px 0;">$1</h3>');
-    // Header level 2
-    html = html.replace(/^## (.*$)/gim, '<h2 style="font-family: var(--font-heading); color: var(--text-primary); font-size: 1.3rem; margin: 20px 0 10px 0;">$1</h2>');
-    // Header level 1
-    html = html.replace(/^# (.*$)/gim, '<h1 style="font-family: var(--font-heading); color: var(--text-primary); font-size: 1.5rem; margin: 24px 0 12px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">$1</h1>');
-    
-    // Bold
-    html = html.replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--text-primary); font-weight:600;">$1</strong>');
-    
-    // Bullet lists
-    html = html.replace(/^\s*[-*+]\s+(.*$)/gim, '<li style="margin-left: 20px; margin-bottom: 6px; list-style-type: square; color: var(--text-secondary);">$1</li>');
-    
-    // Wrap paragraph line breaks
+    html = html.replace(/^### (.*$)/gim, '<h3 style="font-family: var(--font-heading); color: var(--accent-cyan); font-size: 0.9rem; margin: 16px 0 8px 0;">$1</h3>');
+    html = html.replace(/^## (.*$)/gim, '<h2 style="font-family: var(--font-heading); color: var(--text-primary); font-size: 1.1rem; margin: 20px 0 10px 0;">$1</h2>');
+    html = html.replace(/^# (.*$)/gim, '<h1 style="font-family: var(--font-heading); color: var(--text-primary); font-size: 1.3rem; margin: 24px 0 12px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">$1</h1>');
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--accent-cyan); font-weight:600;">$1</strong>');
+    html = html.replace(/^\s*[-*+]\s+(.*$)/gim, '<li style="margin-left: 16px; margin-bottom: 6px; list-style-type: square; color: var(--text-secondary); font-size: 0.85rem;">$1</li>');
     html = html.replace(/\n/g, '<br />');
-    
     return html;
   };
 
-  // Download utilities
   const downloadTXT = () => {
     const blob = new Blob([transcript], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -466,7 +433,7 @@ export default function App() {
     doc.setFont("helvetica", "normal");
     
     doc.setFontSize(16);
-    doc.text(documentTitle || "relaxntakenotes.africa Transcript", 14, 20);
+    doc.text(documentTitle || "Relax n Take Notes Transcript", 14, 20);
     
     doc.setFontSize(10);
     const splitText = doc.splitTextToSize(transcript, 180);
@@ -483,25 +450,21 @@ export default function App() {
     doc.save(`${documentTitle.toLowerCase().replace(/\s+/g, "_")}_transcript.pdf`);
   };
 
-  // If global budget is exceeded, render "Return Shortly" page immediately
   if (status.is_over_budget) {
     return (
-      <div class="container fade-in">
-        <div class="over-budget-container">
-          <div class="over-budget-icon">🌙</div>
-          <h1 style={{ fontSize: "2.5rem", marginBottom: "16px", color: "var(--accent-gold)" }}>High Traffic Volatility</h1>
-          <h2 style={{ fontSize: "1.5rem", marginBottom: "24px", color: "var(--text-primary)" }}>We will return shortly!</h2>
-          <p style={{ marginBottom: "32px", fontSize: "1.1rem" }}>
-            The free server budget for transcriptions has been reached for this month. 
-            We cap resource consumption to ensure free plans remain viable for everyone. 
-            Service will resume automatically next month.
+      <div className="container fade-in">
+        <div className="over-budget-container">
+          <div className="over-budget-icon" style={{ textShadow: "0 0 30px var(--accent-cyan-glow)", color: "var(--accent-cyan)" }}>🎙️</div>
+          <h1 style={{ fontSize: "2rem", marginBottom: "16px", color: "var(--accent-cyan)" }}>Server resting...</h1>
+          <h2 style={{ fontSize: "1.2rem", marginBottom: "24px", color: "var(--text-primary)" }}>We've Hit the Monthly Ceiling!</h2>
+          <p style={{ marginBottom: "32px", fontSize: "0.95rem" }}>
+            The free server budget for transcriptions has been fully consumed for this month. 
+            We cap execution limits on relaxntakenotes.africa to keep our hosting free for everyone. 
+            We will be back online automatically next month.
           </p>
           <div style={{ display: "flex", gap: "16px" }}>
             <button className="btn btn-secondary" onClick={fetchStatus}>Check Again</button>
-            <a href="mailto:support@relaxntakenotes.africa" className="btn btn-primary">Request Pro Extension</a>
-          </div>
-          <div style={{ marginTop: "40px" }} className="text-muted-small">
-            Monthly budget cycles reset on the 1st of each month.
+            <a href="mailto:support@relaxntakenotes.africa" className="btn btn-primary">Upgrade Platform</a>
           </div>
         </div>
       </div>
@@ -509,48 +472,130 @@ export default function App() {
   }
 
   return (
-    <div className="container fade-in" style={{ paddingBottom: "80px" }}>
+    <div className="container fade-in" style={{ paddingBottom: "100px" }}>
       {/* Header */}
       <header className="header">
         <div className="logo" onClick={() => { setTranscript(""); setAudioFile(null); }}>
-          🎙️ relaxntakenotes<span className="logo-dot">.africa</span>
+          🎙️ Relax n Take Notes
         </div>
         
         <div className="flex-center">
           <div className="budget-badge">
-            <Clock size={14} />
-            <span>Usage: {status.user_usage_minutes} / {status.user_limit_minutes} min (User)</span>
+            <Clock size={14} className="text-teal" />
+            <span>Used: {status.user_usage_minutes} / {status.user_limit_minutes} min (You)</span>
           </div>
           <div className={`budget-badge ${status.global_usage_minutes >= status.global_limit_minutes * 0.9 ? 'budget-alert' : ''}`}>
-            <TrendingUp size={14} />
-            <span>Global Server: {status.global_usage_minutes} / {status.global_limit_minutes} min</span>
+            <TrendingUp size={14} className="text-purple" />
+            <span>Server Quota: {status.global_usage_minutes} / {status.global_limit_minutes} min</span>
           </div>
         </div>
       </header>
 
       {/* Main Panel - Switch between Input / Staging Area */}
       {!transcript ? (
-        <div style={{ maxWidth: "800px", margin: "0 auto" }}>
-          {/* Hero Headline */}
-          <div style={{ textAlign: "center", marginBottom: "48px" }}>
-            <h1 style={{ fontSize: "3rem", lineHeight: "1.2", marginBottom: "16px", background: "linear-gradient(135deg, #FFF 40%, var(--accent-purple) 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              Relax, I'll take Notes.
+        <div>
+          {/* Hero Headline Section */}
+          <div style={{ textAlign: "center", marginBottom: "64px", marginTop: "32px" }}>
+            <span style={{ fontSize: "0.75rem", fontFamily: "var(--font-heading)", color: "var(--accent-cyan)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+              relaxntakenotes.africa
+            </span>
+            <h1 style={{ fontSize: "2.8rem", lineHeight: "1.1", marginTop: "12px", marginBottom: "24px", background: "linear-gradient(135deg, #FFF 40%, var(--accent-cyan) 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              You talk, we take the credit (and the notes).
             </h1>
-            <p style={{ fontSize: "1.2rem", maxWidth: "600px", margin: "0 auto" }}>
-              Let artificial intelligence listen, parse, and write. Record or upload audio files up to {status.max_recording_duration_minutes} minutes, fill in custom metadata context, and staging writes clean minutes, action points, translations, or synthetic voice playback.
+            <p style={{ fontSize: "1.05rem", color: "var(--text-secondary)", maxWidth: "720px", margin: "0 auto", lineHeight: "1.7" }}>
+              Turn hours of messy chatter into clean, structured clarity at warp speed. 
+              Our AI listens, identifies voices, structures notes, translates, and synthesizes 
+              speech—so you can actually pay attention. Frictionless, fast, and completely free.
             </p>
           </div>
 
-          <div className="card">
-            {/* Limitations Notice banner */}
-            <div style={{ display: "flex", gap: "12px", background: "rgba(255, 183, 3, 0.08)", border: "1px solid rgba(255, 183, 3, 0.2)", padding: "16px", borderRadius: "var(--radius-md)", marginBottom: "32px" }}>
-              <AlertTriangle className="text-warning" style={{ flexShrink: 0 }} />
+          {/* Dedicated Features Guide (Step-by-Step Works) */}
+          <section className="features-guide">
+            <p className="section-subtitle">Workflow & Blueprint</p>
+            <h2 className="section-title">How It Works</h2>
+            
+            <div className="steps-grid">
+              {/* Step 1 */}
+              <div className="step-card">
+                <span className="step-number">01</span>
+                <div className="step-icon-wrapper">
+                  <Mic size={20} />
+                </div>
+                <h3 className="step-title">Capture Sound</h3>
+                <p className="step-desc">
+                  Record directly in your browser or drag-and-drop any audio file. We support MP3, WAV, M4A, and WebM up to 30 minutes.
+                </p>
+                <div 
+                  className="step-image-accent" 
+                  style={{ backgroundImage: `url(${soundwaveAccent})`, marginTop: "24px" }}
+                />
+              </div>
+
+              {/* Step 2 */}
+              <div className="step-card">
+                <span className="step-number">02</span>
+                <div className="step-icon-wrapper">
+                  <Cpu size={20} />
+                </div>
+                <h3 className="step-title">Fuel Context</h3>
+                <p className="step-desc">
+                  Select your type (meeting, song, memo) and fill in optional metadata context. Giving the AI participant names or agendas ensures precise output.
+                </p>
+                <div 
+                  className="step-image-accent" 
+                  style={{ backgroundImage: `url(${processingAccent})`, marginTop: "24px" }}
+                />
+              </div>
+
+              {/* Step 3 */}
+              <div className="step-card">
+                <span className="step-number">03</span>
+                <div className="step-icon-wrapper">
+                  <Languages size={20} />
+                </div>
+                <h3 className="step-title">AI Magic</h3>
+                <p className="step-desc">
+                  Deepgram diarizes voices (Speaker 0, Speaker 1) instantly. Summarize the transcript, extract key insights, or translate to global languages.
+                </p>
+                <div 
+                  className="step-image-accent" 
+                  style={{ backgroundImage: `url(${translationAccent})`, marginTop: "24px" }}
+                />
+              </div>
+
+              {/* Step 4 */}
+              <div className="step-card">
+                <span className="step-number">04</span>
+                <div className="step-icon-wrapper">
+                  <Volume2 size={20} />
+                </div>
+                <h3 className="step-title">Re-Voice & Export</h3>
+                <p className="step-desc">
+                  Synthesize the summary back into audio with neural voices using accents (South African, Kenyan, US, etc.) and download as PDF, Word, or TXT.
+                </p>
+                <div 
+                  className="step-image-accent" 
+                  style={{ backgroundImage: `url(${soundwaveAccent})`, marginTop: "24px" }}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Clean, cold visual page break */}
+          <div className="page-break" />
+
+          {/* App Widget Section */}
+          <div className="card" style={{ marginTop: "40px" }}>
+            
+            {/* Custom Soundwave/Notification Alert box */}
+            <div className="notification-card" style={{ marginBottom: "32px" }}>
+              <div className="notification-badge-icon">
+                <AlertTriangle size={20} />
+              </div>
               <div>
-                <strong style={{ color: "var(--accent-gold)" }}>Free Account Limits:</strong>
-                <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)" }}>
-                  Each recording is limited to {status.max_recording_duration_minutes} minutes. 
-                  Personal monthly cap is {status.user_limit_minutes} minutes. 
-                  Please restrict uploads to avoid hitting your limit early.
+                <strong style={{ color: "var(--accent-purple)", fontSize: "0.8rem", fontFamily: "var(--font-heading)" }}>RESOURCE CONSTRAINTS LOG</strong>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "4px" }}>
+                  Recordings are limited to {status.max_recording_duration_minutes} minutes each. Personal monthly usage is capped at {status.user_limit_minutes} minutes. Once exceeded, your profile UUID locks until the monthly budget cycle resets.
                 </p>
               </div>
             </div>
@@ -558,7 +603,7 @@ export default function App() {
             {/* Step 1: Recording Type selector */}
             <div className="form-group">
               <label>Recording Category</label>
-              <div style={{ display: "flex", gap: "8px", overflowX: "auto", paddingBottom: "4px" }}>
+              <div style={{ display: "flex", gap: "10px", overflowX: "auto", paddingBottom: "4px" }}>
                 <button 
                   className={`btn ${recordingType === "Meeting/Hearing" ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setRecordingType("Meeting/Hearing")}
@@ -581,7 +626,7 @@ export default function App() {
             </div>
 
             {/* Step 2: Widget File Upload / Mic Recording */}
-            <div className="form-group" style={{ marginTop: "24px" }}>
+            <div className="form-group" style={{ marginTop: "32px" }}>
               <label>Audio Source</label>
               
               {!audioFile && !isRecording ? (
@@ -595,8 +640,8 @@ export default function App() {
                   <button className="mic-button" onClick={(e) => { e.stopPropagation(); startRecording(); }}>
                     <Mic size={32} />
                   </button>
-                  <h3 style={{ marginBottom: "8px" }}>Click to Record or Drag Audio File Here</h3>
-                  <p className="text-muted-small">Supports mp3, wav, m4a, webm, ogg. Max {status.max_recording_duration_minutes} minutes.</p>
+                  <h3 style={{ marginBottom: "8px", fontSize: "0.95rem" }}>Click to Record or Drag Audio File Here</h3>
+                  <p className="text-muted-small">Supports MP3, WAV, M4A, WebM, OGG. Max {status.max_recording_duration_minutes} minutes.</p>
                   <input 
                     id="file-input" 
                     type="file" 
@@ -606,11 +651,11 @@ export default function App() {
                   />
                 </div>
               ) : isRecording ? (
-                <div className="recording-widget" style={{ borderColor: "var(--error)", background: "rgba(239, 68, 68, 0.02)" }}>
+                <div className="recording-widget" style={{ borderColor: "var(--error)", background: "rgba(239, 68, 68, 0.01)" }}>
                   <button className="mic-button recording" onClick={stopRecording}>
                     <Square size={28} />
                   </button>
-                  <h3 style={{ color: "var(--error)", marginBottom: "4px" }}>Recording Active</h3>
+                  <h3 style={{ color: "var(--error)", marginBottom: "4px", fontSize: "0.95rem" }}>Recording Live Feed</h3>
                   <div className="wave-container">
                     <span className="wave-bar"></span>
                     <span className="wave-bar"></span>
@@ -620,32 +665,32 @@ export default function App() {
                     <span className="wave-bar"></span>
                     <span className="wave-bar"></span>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "center", fontFamily: "var(--font-heading)", fontSize: "1.5rem", fontWeight: "700" }}>
-                    <Clock size={20} className="text-error" />
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "center", fontFamily: "var(--font-heading)", fontSize: "1.2rem", fontWeight: "700" }}>
+                    <Clock size={16} className="text-error" />
                     <span>{formatTime(recordingDuration)}</span>
                   </div>
                   <button 
                     className="btn btn-secondary margin-top-md" 
                     onClick={() => { stopRecording(); setAudioFile(null); }}
                   >
-                    Cancel
+                    Cancel Feed
                   </button>
                 </div>
               ) : (
-                <div className="recording-widget" style={{ borderColor: "var(--accent-teal)" }}>
-                  <div style={{ display: "flex", gap: "16px", alignItems: "center", marginBottom: "16px" }}>
+                <div className="recording-widget" style={{ borderColor: "var(--accent-cyan)" }}>
+                  <div style={{ display: "flex", gap: "16px", alignItems: "center", marginBottom: "20px" }}>
                     <FileAudio size={48} className="text-teal" />
                     <div style={{ textAlign: "left" }}>
-                      <h4 style={{ wordBreak: "break-all" }}>{audioFile.name}</h4>
+                      <h4 style={{ wordBreak: "break-all", fontSize: "0.85rem" }}>{audioFile.name}</h4>
                       <p className="text-muted-small">Size: {(audioFile.size / 1024 / 1024).toFixed(2)} MB</p>
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: "12px" }}>
                     <button className="btn btn-secondary" onClick={() => setAudioFile(null)}>
-                      <RotateCcw size={16} /> Reset
+                      <RotateCcw size={14} /> Clear
                     </button>
                     <label className="btn btn-secondary" htmlFor="file-input-change" style={{ cursor: "pointer" }}>
-                      <Upload size={16} /> Change File
+                      <Upload size={14} /> Replace
                     </label>
                     <input 
                       id="file-input-change" 
@@ -660,10 +705,10 @@ export default function App() {
             </div>
 
             {/* Step 3: Dynamic Metadata Fields */}
-            <div className="margin-top-md" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "24px" }}>
-              <h3 style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
-                <span>Metadata Context</span>
-                <span className="text-muted-small">(Optional, improves AI note quality)</span>
+            <div className="margin-top-lg" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "32px" }}>
+              <h3 style={{ marginBottom: "20px", display: "flex", alignItems: "center", gap: "12px", fontSize: "0.95rem" }}>
+                <span>Inject Context Variables</span>
+                <span className="text-muted-small">(Optional - helps the AI spell names right!)</span>
               </h3>
 
               {recordingType === "Song" && (
@@ -716,7 +761,7 @@ export default function App() {
                     <label>Meeting Title</label>
                     <input 
                       type="text" 
-                      placeholder="e.g. Quarterly Development Strategy" 
+                      placeholder="e.g. Q2 Architecture and Hosting Alignment" 
                       className="form-input" 
                       value={metadata.meetingTitle}
                       onChange={(e) => setMetadata({...metadata, meetingTitle: e.target.value})}
@@ -741,10 +786,10 @@ export default function App() {
                     />
                   </div>
                   <div className="form-group">
-                    <label>Location / Link</label>
+                    <label>Location / Call Link</label>
                     <input 
                       type="text" 
-                      placeholder="e.g. Zoom or Boardroom 3" 
+                      placeholder="e.g. Google Meet / Cape Town Room" 
                       className="form-input"
                       value={metadata.meetingLocation}
                       onChange={(e) => setMetadata({...metadata, meetingLocation: e.target.value})}
@@ -754,17 +799,17 @@ export default function App() {
                     <label>Participants</label>
                     <input 
                       type="text" 
-                      placeholder="Names, comma separated (e.g. Kwame, Sarah, Abeo)" 
+                      placeholder="Names, comma separated (e.g. Sarah, Kwame, Abeo)" 
                       className="form-input"
                       value={metadata.meetingParticipants}
                       onChange={(e) => setMetadata({...metadata, meetingParticipants: e.target.value})}
                     />
                   </div>
                   <div className="form-group full-width">
-                    <label>Purpose / Goals</label>
+                    <label>Purpose / Primary Goals</label>
                     <input 
                       type="text" 
-                      placeholder="e.g. Align team on budget limits and hosting spaces" 
+                      placeholder="e.g. Approve free limits and confirm Hugging Face Space setup" 
                       className="form-input"
                       value={metadata.meetingPurpose}
                       onChange={(e) => setMetadata({...metadata, meetingPurpose: e.target.value})}
@@ -773,7 +818,7 @@ export default function App() {
                   <div className="form-group full-width">
                     <label>Agenda</label>
                     <textarea 
-                      placeholder="e.g. 1. Budget limits review&#10;2. Deepgram credits update&#10;3. Free plan policy approval" 
+                      placeholder="e.g. 1. Deepgram API integration&#10;2. UI design system overhaul&#10;3. Free quota budget checks" 
                       className="form-textarea" 
                       rows="3"
                       value={metadata.meetingAgenda}
@@ -789,7 +834,7 @@ export default function App() {
                     <label>Memo Title</label>
                     <input 
                       type="text" 
-                      placeholder="e.g. Ideas on micro-animations and layouts" 
+                      placeholder="e.g. Ideas on cold dark-mode colors and gradients" 
                       className="form-input" 
                       value={metadata.memoTitle}
                       onChange={(e) => setMetadata({...metadata, memoTitle: e.target.value})}
@@ -815,48 +860,48 @@ export default function App() {
                 disabled={!audioFile || isProcessing || status.user_is_over_limit}
                 onClick={handleTranscribe}
               >
-                {isProcessing ? "Transcribing..." : "Relax & Take Notes"} <ArrowRight size={18} />
+                {isProcessing ? "Processing Audio..." : "Start Transcribing"} <ArrowRight size={16} />
               </button>
             </div>
           </div>
 
           {/* Processing overlay */}
           {isProcessing && (
-            <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(7, 11, 25, 0.9)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 999 }}>
-              <div className="wave-container" style={{ height: "60px", gap: "6px" }}>
-                <span className="wave-bar" style={{ width: "6px" }}></span>
-                <span className="wave-bar" style={{ width: "6px" }}></span>
-                <span className="wave-bar" style={{ width: "6px" }}></span>
-                <span className="wave-bar" style={{ width: "6px" }}></span>
-                <span className="wave-bar" style={{ width: "6px" }}></span>
-                <span className="wave-bar" style={{ width: "6px" }}></span>
-                <span className="wave-bar" style={{ width: "6px" }}></span>
+            <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(4, 6, 14, 0.95)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 999 }}>
+              <div className="wave-container" style={{ height: "60px", gap: "8px" }}>
+                <span className="wave-bar" style={{ width: "4px" }}></span>
+                <span className="wave-bar" style={{ width: "4px" }}></span>
+                <span className="wave-bar" style={{ width: "4px" }}></span>
+                <span className="wave-bar" style={{ width: "4px" }}></span>
+                <span className="wave-bar" style={{ width: "4px" }}></span>
+                <span className="wave-bar" style={{ width: "4px" }}></span>
+                <span className="wave-bar" style={{ width: "4px" }}></span>
               </div>
-              <h2 style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)", marginTop: "24px" }}>Processing Transcript</h2>
-              <p style={{ color: "var(--accent-teal)", marginTop: "8px", maxWidth: "400px", textAlign: "center" }}>{processingStep}</p>
+              <h2 style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)", marginTop: "24px", fontSize: "1.1rem" }}>Analyzing Audio structure</h2>
+              <p style={{ color: "var(--accent-cyan)", marginTop: "8px", maxWidth: "450px", textAlign: "center", fontSize: "0.9rem" }}>{processingStep}</p>
             </div>
           )}
         </div>
       ) : (
-        /* Staging Area Screen */
+        /* Staging Area Screen (Uses wider real estate) */
         <div className="fade-in">
           {/* Top Panel title */}
-          <div className="flex-between" style={{ marginBottom: "24px" }}>
+          <div className="flex-between" style={{ marginBottom: "32px" }}>
             <div>
-              <span style={{ fontSize: "0.85rem", color: "var(--accent-teal)", textTransform: "uppercase", fontWeight: "700" }}>STAGING AREA</span>
-              <h1 style={{ fontSize: "2rem" }}>{documentTitle}</h1>
+              <span style={{ fontSize: "0.7rem", color: "var(--accent-cyan)", textTransform: "uppercase", fontWeight: "700", fontFamily: "var(--font-heading)" }}>WORKSPACE STAGING</span>
+              <h1 style={{ fontSize: "1.6rem", marginTop: "4px" }}>{documentTitle}</h1>
             </div>
             <button className="btn btn-secondary" onClick={() => { setTranscript(""); setAudioFile(null); }}>
-              Start New Note
+              New Transcription
             </button>
           </div>
 
           <div className="staging-container">
-            {/* Left Panel: Editable Transcript */}
-            <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: "600px" }}>
+            {/* Left Panel: Editable Transcript (Larger visual space) */}
+            <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: "680px" }}>
               <div className="flex-between" style={{ marginBottom: "16px" }}>
-                <h2 style={{ fontSize: "1.25rem", color: "var(--text-primary)" }}>Diarized Transcript</h2>
-                <span className="text-muted-small">Feel free to edit the text below</span>
+                <h2 style={{ fontSize: "0.95rem", color: "var(--text-primary)" }}>Diarized Transcript</h2>
+                <span className="text-muted-small">Edit text blocks freely below</span>
               </div>
               <textarea 
                 className="transcript-area" 
@@ -865,18 +910,18 @@ export default function App() {
                 style={{ flexGrow: 1 }}
               />
               
-              {/* Downloads */}
-              <div className="margin-top-md" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "20px" }}>
-                <label style={{ display: "block", marginBottom: "8px", fontSize: "0.9rem" }}>Download Document</label>
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              {/* Document Downloads */}
+              <div className="margin-top-md" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "24px" }}>
+                <label style={{ display: "block", marginBottom: "10px", fontSize: "0.75rem", fontFamily: "var(--font-heading)", color: "var(--text-secondary)" }}>EXPORT DOCUMENT</label>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                   <button className="btn btn-secondary" onClick={downloadTXT}>
-                    <Download size={14} /> TXT
+                    <Download size={14} /> Plain Text
                   </button>
                   <button className="btn btn-secondary" onClick={downloadWord}>
-                    <Download size={14} /> Word (.doc)
+                    <Download size={14} /> MS Word (.doc)
                   </button>
                   <button className="btn btn-secondary" onClick={downloadPDF}>
-                    <Download size={14} /> PDF
+                    <Download size={14} /> Adobe PDF
                   </button>
                 </div>
               </div>
@@ -890,13 +935,13 @@ export default function App() {
                   className={`tab ${aiActiveTab === 'summary' ? 'active' : ''}`}
                   onClick={() => setAiActiveTab("summary")}
                 >
-                  Summary & Minutes
+                  Summary
                 </button>
                 <button 
                   className={`tab ${aiActiveTab === 'insights' ? 'active' : ''}`}
                   onClick={() => setAiActiveTab("insights")}
                 >
-                  Insights & Actions
+                  Insights
                 </button>
                 <button 
                   className={`tab ${aiActiveTab === 'translation' ? 'active' : ''}`}
@@ -915,8 +960,10 @@ export default function App() {
               {/* Tab Contents */}
               <div style={{ flexGrow: 1, display: "flex", flexDirection: "column" }}>
                 {aiActiveTab === "summary" && (
-                  <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: "16px" }}>
-                    <p style={{ fontSize: "0.9rem" }}>Generate an executive summary and structured meeting minutes referencing timestamps and topic divisions.</p>
+                  <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: "20px" }}>
+                    <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                      Synthesize the transcript into a beautiful markdown executive summary and chronologically organized meeting minutes.
+                    </p>
                     <button 
                       className="btn btn-primary" 
                       disabled={isAiLoading}
@@ -928,35 +975,39 @@ export default function App() {
                       {aiSummary ? (
                         <div dangerouslySetInnerHTML={{ __html: renderMarkdown(aiSummary) }} />
                       ) : (
-                        <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>No summary generated yet. Click the button above to begin.</span>
+                        <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: "0.85rem" }}>No summary generated yet. Click the button above.</span>
                       )}
                     </div>
                   </div>
                 )}
 
                 {aiActiveTab === "insights" && (
-                  <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: "16px" }}>
-                    <p style={{ fontSize: "0.9rem" }}>Extract actionable items, owner assignments, and strategic themes from the transcript.</p>
+                  <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: "20px" }}>
+                    <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                      Analyze discussion nodes to parse specific task assignments, action items, target owners, and primary themes.
+                    </p>
                     <button 
                       className="btn btn-primary" 
                       disabled={isAiLoading}
                       onClick={() => triggerAiFeature("insights")}
                     >
-                      {isAiLoading ? "Processing..." : "Extract Insights"} <Sparkles size={16} />
+                      {isAiLoading ? "Analyzing..." : "Extract Action Items"} <Sparkles size={16} />
                     </button>
                     <div className="ai-output-box">
                       {aiInsights ? (
                         <div dangerouslySetInnerHTML={{ __html: renderMarkdown(aiInsights) }} />
                       ) : (
-                        <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>No insights extracted yet. Click the button above to begin.</span>
+                        <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: "0.85rem" }}>No action items parsed yet. Click the button above.</span>
                       )}
                     </div>
                   </div>
                 )}
 
                 {aiActiveTab === "translation" && (
-                  <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: "16px" }}>
-                    <p style={{ fontSize: "0.9rem" }}>Translate the speaker-diarized transcript to a foreign language while maintaining layout structure.</p>
+                  <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: "20px" }}>
+                    <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                      Translate full speaker transcripts into global and regional African languages while maintaining speaker lines.
+                    </p>
                     
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label>Target Language</label>
@@ -972,7 +1023,8 @@ export default function App() {
                         <option value="Swahili">Swahili (Kiswahili)</option>
                         <option value="Arabic">Arabic (العربية)</option>
                         <option value="Yoruba">Yoruba</option>
-                        <option value="Zulu">Zulu</option>
+                        <option value="Zulu">Zulu (isiZulu)</option>
+                        <option value="Xhosa">Xhosa (isiXhosa)</option>
                       </select>
                     </div>
 
@@ -985,20 +1037,22 @@ export default function App() {
                     </button>
                     <div className="ai-output-box">
                       {aiTranslation ? (
-                        <div style={{ whiteSpace: "pre-wrap" }}>{aiTranslation}</div>
+                        <div style={{ whiteSpace: "pre-wrap", fontSize: "0.85rem" }}>{aiTranslation}</div>
                       ) : (
-                        <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>No translation performed yet. Click the button above to begin.</span>
+                        <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: "0.85rem" }}>No translation performed yet. Click the button above.</span>
                       )}
                     </div>
                   </div>
                 )}
 
                 {aiActiveTab === "tts" && (
-                  <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: "16px" }}>
-                    <p style={{ fontSize: "0.9rem" }}>Synthesize the transcript into speech using free Microsoft neural voices with different regional accents.</p>
+                  <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: "20px" }}>
+                    <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                      Re-voice the summary back into high-fidelity neural audio. Select accent characters for localized playback.
+                    </p>
                     
                     <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label>Voice / Accent Style</label>
+                      <label>Voice Synthesis Accent</label>
                       <select 
                         className="form-select"
                         value={ttsVoice}
@@ -1022,12 +1076,12 @@ export default function App() {
                       disabled={isTtsSynthesizing}
                       onClick={handleTtsSynthesis}
                     >
-                      {isTtsSynthesizing ? "Synthesizing Voice..." : "Synthesize Voice"} <Volume2 size={16} />
+                      {isTtsSynthesizing ? "Synthesizing Audio..." : "Synthesize voice"} <Volume2 size={16} />
                     </button>
 
                     {ttsAudioUrl && (
-                      <div className="fade-in" style={{ background: "rgba(22, 34, 63, 0.4)", border: "1px solid var(--border-color)", padding: "16px", borderRadius: "var(--radius-md)", marginTop: "16px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-                        <span style={{ fontSize: "0.85rem", color: "var(--accent-teal)", fontWeight: "600", marginBottom: "8px" }}>AUDIO SYNTHESIS COMPLETE</span>
+                      <div className="fade-in" style={{ background: "rgba(4, 6, 14, 0.6)", border: "1px solid var(--border-color)", padding: "20px", borderRadius: "var(--radius-md)", marginTop: "16px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.75rem", color: "var(--accent-cyan)", fontWeight: "700", marginBottom: "12px", fontFamily: "var(--font-heading)" }}>SYNTHESIS ACTIVE</span>
                         <audio 
                           ref={audioPlayerRef} 
                           src={ttsAudioUrl} 
