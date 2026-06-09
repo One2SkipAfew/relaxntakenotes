@@ -524,7 +524,7 @@ export default function App() {
         <section className="section-hero">
           <div className="container">
             {/* Header */}
-            <header className="header" style={{ marginBottom: "40px" }}>
+            <header className="header" style={{ marginBottom: "16px" }}>
               <div className="logo" onClick={() => { setTranscript(""); setAudioFile(null); }}>
                 <AfricaMicLogo />
                 Relax n Take Notes
@@ -546,14 +546,14 @@ export default function App() {
               <h1 style={{ fontSize: "3.6rem", lineHeight: "1.1", marginBottom: "12px", background: "linear-gradient(135deg, #FFF 40%, var(--accent-cyan) 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
                 Relax, I'll take notes.
               </h1>
-              <h2 style={{ fontSize: "1.4rem", color: "var(--accent-cyan)", fontFamily: "var(--font-heading)", fontWeight: "600", marginTop: "0", marginBottom: "24px", letterSpacing: "0.01em" }}>
+              <h2 style={{ fontSize: "1.35rem", color: "var(--accent-cyan)", fontFamily: "var(--font-heading)", fontWeight: "600", marginTop: "0", marginBottom: "12px", letterSpacing: "0.01em" }}>
                 Africa's AI Powered Speech-to-Text and Speech-to-Text-to-Speech
               </h2>
-              <p style={{ fontSize: "1.2rem", color: "var(--text-secondary)", lineHeight: "1.7", fontWeight: "500" }}>
+              <p style={{ fontSize: "1.15rem", color: "var(--text-secondary)", lineHeight: "1.6", fontWeight: "500" }}>
                 Let's take your voice recordings and turn them into text. Use features such as Summary and Insights, and others, to manage the information in the recording. It's safe, fast and free. Record and upload audio files, process the information, manage the information and export when ready. Just upload, process and download. It's that easy!
               </p>
               
-              <div style={{ marginTop: "32px" }}>
+              <div style={{ marginTop: "20px" }}>
                 <button 
                   className="btn btn-primary"
                   onClick={() => {

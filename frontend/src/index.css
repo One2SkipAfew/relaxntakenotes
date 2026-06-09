@@ -94,9 +94,9 @@ a:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24px 0;
-  border-bottom: 1px solid var(--border-color);
-  margin-bottom: 30px;
+  padding: 12px 0;
+  border-bottom: none;
+  margin-bottom: 0px;
 }
 
 /* Custom SVG Logo and Africa Microphone styles */
@@ -120,7 +120,7 @@ a:hover {
 /* Section-Specific Background Folds to aid the Page Break request */
 .section-hero {
   background-color: var(--bg-primary);
-  padding: 60px 0 80px 0;
+  padding: 16px 0 32px 0;
   position: relative;
 }
 
@@ -851,9 +851,9 @@ a:hover {
 
 .centerpiece-container {
   position: relative;
-  width: 260px;
-  height: 260px;
-  margin: 0 auto 30px auto;
+  width: 200px;
+  height: 200px;
+  margin: 0 auto 12px auto;
   display: flex;
   justify-content: center;
   align-items: center;
