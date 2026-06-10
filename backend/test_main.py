@@ -164,7 +164,7 @@ async def test_text_to_speech():
         assert response.headers["content-type"] == "audio/mpeg"
 
 def test_ai_features_fallback():
-    # Mock hf_client to raise an exception, triggering the offline fallback
+    # Mock hf_client to raise an exception, triggering the offline error response
     with patch("main.hf_client.chat_completion", side_effect=Exception("Connection refused")):
         payload = {
             "transcript": "Speaker 0: Good morning.\nSpeaker 1: Hi there.",
@@ -172,12 +172,10 @@ def test_ai_features_fallback():
             "metadata": {"type": "Meeting", "date": "2026-06-10"}
         }
         response = client.post("/api/ai-features", json=payload)
-        assert response.status_code == 200
+        assert response.status_code == 503
         data = response.json()
-        assert "result" in data
-        assert "Offline Fallback Mode" in data["result"]
-        assert "Speaker 0" in data["result"]
-        assert "Speaker 1" in data["result"]
+        assert "detail" in data
+        assert "offline, overloaded, or unreachable" in data["detail"]
 
 def test_text_to_speech_fallback():
     # Mock edge_tts.Communicate to raise an exception, triggering the silent audio fallback
