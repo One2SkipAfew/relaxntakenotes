@@ -373,89 +373,11 @@ async def generate_ai_features(payload: AIFeaturesRequest):
             result_text = response.choices[0].message.content
             return {"result": result_text}
         except Exception as fallback_err:
-            print(f"Fallback model failed: {fallback_err}. Generating local offline fallback...")
-            
-            # Extract unique speakers and dialogue samples to make the local summary very realistic
-            lines = [line.strip() for line in payload.transcript.split("\n") if line.strip() and ":" in line]
-            speakers = []
-            dialogues = []
-            for line in lines:
-                parts = line.split(":", 1)
-                if len(parts) == 2:
-                    spk, txt = parts[0].strip(), parts[1].strip()
-                    if spk not in speakers:
-                        speakers.append(spk)
-                    dialogues.append((spk, txt))
-            
-            num_speakers = len(speakers)
-            
-            if payload.feature_type == "summary":
-                # Build a realistic summary of the transcript
-                fallback_markdown = (
-                    f"# AI Generated Executive Summary (Offline Fallback Mode)\n\n"
-                    f"*Note: The Hugging Face inference service is currently offline or unreachable. "
-                    f"A local rule-based summary has been generated for your convenience.*\n\n"
-                    f"### Document Details\n"
-                    f"- **Resource**: relaxntakenotes.africa Offline Engine\n"
-                    f"- **Participants**: {', '.join(speakers) if speakers else 'Not specified'}\n"
-                    f"- **Total Speakers**: {num_speakers} participant(s) detected\n\n"
-                    f"### Key Topics & Discussion Points\n"
-                )
-                if dialogues:
-                    fallback_markdown += f"- **Opening Statements**: Discussion was initiated by **{dialogues[0][0]}**, who noted: *\"{dialogues[0][1][:120]}...\"*\n"
-                    if len(dialogues) > 1:
-                        fallback_markdown += f"- **Key Exchanges**: Collaborative discussion occurred between participants. For instance, **{dialogues[1][0]}** shared details: *\"{dialogues[1][1][:120]}...\"*\n"
-                    if len(dialogues) > 2:
-                        fallback_markdown += f"- **Core Dialogue**: Further statements were recorded from **{dialogues[-1][0]}**: *\"{dialogues[-1][1][:120]}...\"*\n"
-                else:
-                    fallback_markdown += "- **Discussion Context**: General notes recorded and formatted in staging.\n"
-                    
-                fallback_markdown += (
-                    f"\n### Action Items & Next Steps\n"
-                    f"1. **Action Item**: Review the transcription text and verify speaker assignments.\n"
-                    f"2. **Sync Schedule**: Plan follow-up sync to address key questions raised by the team.\n"
-                )
-                return {"result": fallback_markdown}
-                
-            elif payload.feature_type == "insights":
-                fallback_markdown = (
-                    f"# AI Strategic Insights & Actions (Offline Fallback Mode)\n\n"
-                    f"*Note: Hugging Face connection failed. Generating offline analytical insights.*\n\n"
-                    f"### Discussion Analysis\n"
-                    f"- **Engagement Level**: High cross-talk and dialogue engagement across {num_speakers} participant(s).\n"
-                    f"- **Core Themes**: Collaborative project planning, alignment on milestones, and process verification.\n\n"
-                    f"### Action Item Checklist\n"
-                )
-                for i, (spk, txt) in enumerate(dialogues[:4]):
-                    # Look for keywords like "need", "should", "will", "must", "action"
-                    lower_txt = txt.lower()
-                    if any(kw in lower_txt for kw in ["need", "should", "will", "must", "action", "hiring", "greenhouse"]):
-                        fallback_markdown += f"- [ ] **Task ({spk})**: {txt[:100]}...\n"
-                if "- [ ]" not in fallback_markdown:
-                    # Default checklist if no action items matched
-                    fallback_markdown += (
-                        f"- [ ] **Task**: Address first points raised by **{speakers[0]}**.\n"
-                        if speakers else "- [ ] **Task**: Review transcript for action items.\n"
-                    )
-                    if len(speakers) > 1:
-                        fallback_markdown += f"- [ ] **Task**: Follow up on clarifications from **{speakers[1]}**.\n"
-                return {"result": fallback_markdown}
-                
-            elif payload.feature_type == "translation":
-                target_lang = payload.target_language or "French"
-                
-                # Mock translation helper (simple fallback translation)
-                fallback_markdown = (
-                    f"### [Translated to {target_lang} - Offline Fallback Mode]\n\n"
-                    f"*Note: Connection to external translation engine failed. Showing original lines with speaker prefixes:*\n\n"
-                )
-                for spk, txt in dialogues:
-                    fallback_markdown += f"**{spk}**: {txt}\n\n"
-                if not dialogues:
-                    fallback_markdown += payload.transcript
-                return {"result": fallback_markdown}
-            
-            raise HTTPException(status_code=500, detail=f"AI features generation failed: {str(e)}")
+            print(f"Fallback model failed: {fallback_err}")
+            raise HTTPException(
+                status_code=503, 
+                detail="The Hugging Face AI Inference service is currently offline, overloaded, or unreachable. Please try again later."
+            )
 
 @app.post("/api/tts")
 async def text_to_speech(payload: TTSRequest):

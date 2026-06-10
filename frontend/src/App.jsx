@@ -135,6 +135,7 @@ export default function App() {
   const [transcript, setTranscript] = useState("");
   const [documentTitle, setDocumentTitle] = useState("");
   const [speakerMap, setSpeakerMap] = useState({});
+  const [speakerInputs, setSpeakerInputs] = useState({});
 
   const [aiActiveTab, setAiActiveTab] = useState("summary");
   const [aiSummary, setAiSummary] = useState("");
@@ -258,6 +259,7 @@ export default function App() {
     setProcessingStep("Uploading audio payload and initiating transcription...");
     setTranscript("");
     setSpeakerMap({});
+    setSpeakerInputs({});
 
     let selectedMeta = {};
     let finalTitle = "";
@@ -321,7 +323,7 @@ export default function App() {
 
       setTranscript(transcriptText);
 
-      // Extract unique speakers to initialize speakerMap
+      // Extract unique speakers to initialize speakerMap and speakerInputs
       if (data.paragraphs && data.paragraphs.length > 0) {
         const uniqueSpeakers = [...new Set(data.paragraphs.map(p => p.speaker))];
         const initialMap = {};
@@ -329,6 +331,7 @@ export default function App() {
           initialMap[s] = s;
         });
         setSpeakerMap(initialMap);
+        setSpeakerInputs(initialMap);
       } else {
         const matches = Array.from(transcriptText.matchAll(/^(Speaker \d+|Speaker [A-Za-z0-9]+):/gm)).map(m => m[1]);
         const uniqueSpeakers = [...new Set(matches)];
@@ -337,6 +340,7 @@ export default function App() {
           initialMap[s] = s;
         });
         setSpeakerMap(initialMap);
+        setSpeakerInputs(initialMap);
       }
 
       setIsProcessing(false);
@@ -349,20 +353,27 @@ export default function App() {
   };
 
   const renameSpeaker = (key, rawName) => {
-    // Strip trailing colons or whitespace to prevent formatting issues
-    const newName = rawName.replace(/:+$/, "").trim();
+    let newName = rawName.replace(/:+$/, "").trim();
+    if (!newName) {
+      newName = key;
+    }
     const oldName = speakerMap[key] || key;
-    // Escape special regex characters in oldName just in case
+    if (oldName === newName) return; // No change
+    
     const escapedOldName = oldName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
     const regex = new RegExp(`^${escapedOldName}:`, 'gm');
     
     // Update transcript text by replacing oldName with newName
     setTranscript(prev => prev.replace(regex, `${newName}:`));
     
-    // Update mapping state
+    // Update mapping states
     setSpeakerMap(prev => ({
       ...prev,
-      [key]: rawName
+      [key]: newName
+    }));
+    setSpeakerInputs(prev => ({
+      ...prev,
+      [key]: newName
     }));
   };
 
@@ -1019,9 +1030,19 @@ export default function App() {
                               type="text"
                               className="form-input"
                               style={{ padding: "4px 8px", fontSize: "0.75rem", background: "rgba(4, 6, 14, 0.85)" }}
-                              value={speakerMap[key]}
+                              value={speakerInputs[key] || ""}
                               placeholder={`Name for ${key}`}
-                              onChange={(e) => renameSpeaker(key, e.target.value)}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setSpeakerInputs(prev => ({ ...prev, [key]: val }));
+                              }}
+                              onBlur={() => renameSpeaker(key, speakerInputs[key] || "")}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  renameSpeaker(key, speakerInputs[key] || "");
+                                  e.target.blur();
+                                }
+                              }}
                             />
                           </div>
                         ))}
