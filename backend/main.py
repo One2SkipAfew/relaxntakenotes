@@ -23,6 +23,7 @@ DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
+HF_ENDPOINT_URL = os.getenv("HF_ENDPOINT_URL")
 
 MONTHLY_LIMIT_MINUTES = int(os.getenv("MONTHLY_LIMIT_MINUTES", "3500"))
 USER_MONTHLY_LIMIT_MINUTES = int(os.getenv("USER_MONTHLY_LIMIT_MINUTES", "60"))
@@ -38,7 +39,10 @@ if SUPABASE_URL and SUPABASE_KEY:
 
 deepgram_client = DeepgramClient(DEEPGRAM_API_KEY) if DEEPGRAM_API_KEY else None
 
-hf_client = InferenceClient(token=HF_TOKEN, timeout=1800.0) if HF_TOKEN else InferenceClient(timeout=1800.0)
+if HF_ENDPOINT_URL:
+    hf_client = InferenceClient(base_url=HF_ENDPOINT_URL, token=HF_TOKEN, timeout=1800.0)
+else:
+    hf_client = InferenceClient(token=HF_TOKEN, timeout=1800.0) if HF_TOKEN else InferenceClient(timeout=1800.0)
 
 app = FastAPI(
     title="relaxntakenotes.africa API",
