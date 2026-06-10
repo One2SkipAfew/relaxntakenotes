@@ -230,8 +230,11 @@ async def transcribe_audio(
         payload = {"buffer": file_bytes, "mimetype": file.content_type}
         response = deepgram_client.listen.prerecorded.v("1").transcribe_file(payload, options)
         
+        # Convert response object to dict for safe retrieval
+        response_dict = response.to_dict()
+        
         # Parse output
-        metadata = response.get("metadata", {})
+        metadata = response_dict.get("metadata", {})
         duration_seconds = round(metadata.get("duration", 0))
         
         # Validate that the duration does not exceed the limit
@@ -239,7 +242,7 @@ async def transcribe_audio(
             raise HTTPException(status_code=400, detail=f"Audio duration exceeds the maximum allowed limit of {MAX_RECORDING_DURATION_MINUTES} minutes.")
             
         # Extract transcript with speaker info if available
-        results = response.get("results", {})
+        results = response_dict.get("results", {})
         channels = results.get("channels", [])
         
         transcript_text = ""
