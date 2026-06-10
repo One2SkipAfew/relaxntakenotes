@@ -162,3 +162,31 @@ async def test_text_to_speech():
         response = client.post("/api/tts", json=payload)
         assert response.status_code == 200
         assert response.headers["content-type"] == "audio/mpeg"
+
+def test_ai_features_fallback():
+    # Mock hf_client to raise an exception, triggering the offline fallback
+    with patch("main.hf_client.chat_completion", side_effect=Exception("Connection refused")):
+        payload = {
+            "transcript": "Speaker 0: Good morning.\nSpeaker 1: Hi there.",
+            "feature_type": "summary",
+            "metadata": {"type": "Meeting", "date": "2026-06-10"}
+        }
+        response = client.post("/api/ai-features", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert "result" in data
+        assert "Offline Fallback Mode" in data["result"]
+        assert "Speaker 0" in data["result"]
+        assert "Speaker 1" in data["result"]
+
+def test_text_to_speech_fallback():
+    # Mock edge_tts.Communicate to raise an exception, triggering the silent audio fallback
+    with patch("edge_tts.Communicate", side_effect=Exception("Service Unavailable")):
+        payload = {
+            "text": "Hello fallback",
+            "voice": "en-US-JennyNeural"
+        }
+        response = client.post("/api/tts", json=payload)
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "audio/mpeg"
+        assert len(response.content) > 0 # verified it returns silent MP3 bytes
