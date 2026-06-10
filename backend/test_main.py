@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 # Mock environment variables before importing main to avoid missing config blocks
 with patch.dict(os.environ, {
-    "DEEPGRAM_API_KEY": "fake_deepgram_key",
+    "DEEPGRAM_API_KEY": "temp_deepgram_key",
     "SUPABASE_URL": "https://fake-supabase.supabase.co",
     "SUPABASE_KEY": "fake_supabase_key",
     "HF_TOKEN": "fake_hf_token",

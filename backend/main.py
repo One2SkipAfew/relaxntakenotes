@@ -38,7 +38,7 @@ if SUPABASE_URL and SUPABASE_KEY:
 
 deepgram_client = DeepgramClient(DEEPGRAM_API_KEY) if DEEPGRAM_API_KEY else None
 
-hf_client = InferenceClient(token=HF_TOKEN) if HF_TOKEN else InferenceClient()
+hf_client = InferenceClient(token=HF_TOKEN, timeout=1800.0) if HF_TOKEN else InferenceClient(timeout=1800.0)
 
 app = FastAPI(
     title="relaxntakenotes.africa API",
@@ -232,11 +232,11 @@ async def transcribe_audio(
         response = deepgram_client.listen.prerecorded.v("1").transcribe_file(
             payload, 
             options, 
-            timeout=httpx.Timeout(300.0, connect=30.0)
+            timeout=httpx.Timeout(1800.0, connect=60.0)
         )
         
         # Convert response object to dict for safe retrieval
-        response_dict = response.to_dict()
+        response_dict = response.to_dict() if hasattr(response, "to_dict") else response
         
         # Parse output
         metadata = response_dict.get("metadata", {})
