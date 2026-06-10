@@ -853,7 +853,7 @@ a:hover {
   position: relative;
   width: 200px;
   height: 200px;
-  margin: 0 auto 12px auto;
+  margin: -36px auto 12px auto;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -864,17 +864,17 @@ a:hover {
   height: 100%;
   object-fit: contain;
   /* Mask gradient to fade/blur the edges out completely so it blends with background #04060E */
-  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 1) 15%, rgba(0, 0, 0, 0.85) 30%, rgba(0, 0, 0, 0) 58%);
-  -webkit-mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 1) 15%, rgba(0, 0, 0, 0.85) 30%, rgba(0, 0, 0, 0) 58%);
-  filter: blur(1.5px) contrast(1.05);
+  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 1) 25%, rgba(0, 0, 0, 0.85) 38%, rgba(0, 0, 0, 0) 58%);
+  -webkit-mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 1) 25%, rgba(0, 0, 0, 0.85) 38%, rgba(0, 0, 0, 0) 58%);
+  filter: blur(0.4px) contrast(1.05);
   animation: centerpiece-pulse 6s infinite ease-in-out;
 }
 
 /* Subtle pulse animation for the centerpiece image to breathe and glow */
 @keyframes centerpiece-pulse {
-  0% { transform: scale(1); filter: blur(1.5px) drop-shadow(0 0 15px rgba(0, 240, 255, 0.1)); }
-  50% { transform: scale(1.03); filter: blur(1.8px) drop-shadow(0 0 25px rgba(0, 240, 255, 0.3)); }
-  100% { transform: scale(1); filter: blur(1.5px) drop-shadow(0 0 15px rgba(0, 240, 255, 0.1)); }
+  0% { transform: scale(1); filter: blur(0.4px) drop-shadow(0 0 15px rgba(0, 240, 255, 0.1)); }
+  50% { transform: scale(1.03); filter: blur(0.6px) drop-shadow(0 0 25px rgba(0, 240, 255, 0.3)); }
+  100% { transform: scale(1); filter: blur(0.4px) drop-shadow(0 0 15px rgba(0, 240, 255, 0.1)); }
 }
 
 /* Audio Source Selection Options */
