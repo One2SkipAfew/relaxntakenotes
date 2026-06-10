@@ -13,6 +13,7 @@ from supabase import create_client, Client
 from deepgram import DeepgramClient, PrerecordedOptions, FileSource
 from huggingface_hub import InferenceClient
 import edge_tts
+import httpx
 
 # Load environment variables
 load_dotenv()
@@ -228,7 +229,11 @@ async def transcribe_audio(
         
         # Send audio payload to Deepgram
         payload = {"buffer": file_bytes, "mimetype": file.content_type}
-        response = deepgram_client.listen.prerecorded.v("1").transcribe_file(payload, options)
+        response = deepgram_client.listen.prerecorded.v("1").transcribe_file(
+            payload, 
+            options, 
+            timeout=httpx.Timeout(300.0, connect=30.0)
+        )
         
         # Convert response object to dict for safe retrieval
         response_dict = response.to_dict()
