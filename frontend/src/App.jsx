@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
-import { 
-  Mic, 
-  Square, 
-  Upload, 
-  FileAudio, 
-  Music, 
-  Users, 
-  FileText, 
-  Sparkles, 
-  ArrowRight, 
-  Download, 
-  Volume2, 
-  RotateCcw, 
+import {
+  Mic,
+  Square,
+  Upload,
+  FileAudio,
+  Music,
+  Users,
+  FileText,
+  Sparkles,
+  ArrowRight,
+  Download,
+  Volume2,
+  RotateCcw,
   AlertTriangle,
   Clock,
   Languages,
@@ -34,7 +34,7 @@ const AfricaMicLogo = () => (
       {/* Wave coming in from left */}
       <path d="M 4 10 A 10 10 0 0 1 4 30" stroke="#00F0FF" strokeWidth="2" strokeLinecap="round" opacity="0.3" />
       <path d="M 8 14 A 6 6 0 0 1 8 26" stroke="#00F0FF" strokeWidth="2" strokeLinecap="round" />
-      
+
       {/* Africa Map shape as Mic body */}
       <path d="M 18.5 8 
                C 16.5 8, 14 10, 13.5 12.5 
@@ -44,11 +44,11 @@ const AfricaMicLogo = () => (
                C 19 22.8, 19.5 21.8, 20.2 21 
                C 21.2 20.2, 22.2 19, 22.5 17 
                C 22.8 15, 21.2 11, 20.5 9.5 
-               C 20 8.5, 19.5 8, 18.5 8 Z" 
-            fill="rgba(0, 240, 255, 0.12)" 
-            stroke="#00F0FF" 
-            strokeWidth="2.2" 
-            strokeLinejoin="round" 
+               C 20 8.5, 19.5 8, 18.5 8 Z"
+        fill="rgba(0, 240, 255, 0.12)"
+        stroke="#00F0FF"
+        strokeWidth="2.2"
+        strokeLinejoin="round"
       />
       {/* Mic Stand */}
       <line x1="18" y1="25" x2="18" y2="31" stroke="#94A3B8" strokeWidth="2" />
@@ -108,7 +108,7 @@ export default function App() {
   });
 
   const [recordingType, setRecordingType] = useState("Meeting/Hearing");
-  
+
   const [metadata, setMetadata] = useState({
     songArtist: "",
     songTitle: "",
@@ -134,7 +134,7 @@ export default function App() {
   const [processingStep, setProcessingStep] = useState("");
   const [transcript, setTranscript] = useState("");
   const [documentTitle, setDocumentTitle] = useState("");
-  
+
   const [aiActiveTab, setAiActiveTab] = useState("summary");
   const [aiSummary, setAiSummary] = useState("");
   const [aiInsights, setAiInsights] = useState("");
@@ -177,7 +177,7 @@ export default function App() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorderRef.current = new MediaRecorder(stream);
-      
+
       mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
@@ -194,7 +194,7 @@ export default function App() {
       mediaRecorderRef.current.start(250);
       setIsRecording(true);
       setRecordingDuration(0);
-      
+
       recordingTimerRef.current = setInterval(() => {
         setRecordingDuration(prev => {
           if (prev >= status.max_recording_duration_minutes * 60) {
@@ -204,7 +204,7 @@ export default function App() {
           return prev + 1;
         });
       }, 1000);
-      
+
     } catch (err) {
       alert("Could not access microphone. Please check permissions.");
       console.error(err);
@@ -233,7 +233,7 @@ export default function App() {
   const handleDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       if (file.type.startsWith("audio/")) {
@@ -309,18 +309,18 @@ export default function App() {
       }
 
       const data = await response.json();
-      
+
       let transcriptText = "";
       if (data.paragraphs && data.paragraphs.length > 0) {
         transcriptText = data.paragraphs.map(p => `${p.speaker}: ${p.text}`).join("\n\n");
       } else {
         transcriptText = data.raw_transcript;
       }
-      
+
       setTranscript(transcriptText);
       setIsProcessing(false);
       fetchStatus();
-      
+
     } catch (err) {
       alert(`Error transcribing audio: ${err.message}`);
       setIsProcessing(false);
@@ -389,7 +389,7 @@ export default function App() {
 
   const handleTtsSynthesis = async () => {
     if (!transcript) return;
-    
+
     setIsTtsSynthesizing(true);
     if (ttsAudioUrl) {
       URL.revokeObjectURL(ttsAudioUrl);
@@ -476,13 +476,13 @@ export default function App() {
   const downloadPDF = () => {
     const doc = new jsPDF();
     doc.setFont("helvetica", "normal");
-    
+
     doc.setFontSize(16);
     doc.text(documentTitle || "Relax n Take Notes Transcript", 14, 20);
-    
+
     doc.setFontSize(10);
     const splitText = doc.splitTextToSize(transcript, 180);
-    
+
     let y = 30;
     for (let i = 0; i < splitText.length; i++) {
       if (y > 280) {
@@ -503,8 +503,8 @@ export default function App() {
           <h1 style={{ fontSize: "2rem", marginBottom: "16px", color: "var(--accent-cyan)" }}>Server resting...</h1>
           <h2 style={{ fontSize: "1.2rem", marginBottom: "24px", color: "var(--text-primary)" }}>We've Hit the Monthly Ceiling!</h2>
           <p style={{ marginBottom: "32px", fontSize: "0.95rem" }}>
-            The free server budget for transcriptions has been fully consumed for this month. 
-            We cap execution limits on relaxntakenotes.africa to keep our hosting free for everyone. 
+            The free server budget for transcriptions has been fully consumed for this month.
+            We cap execution limits on relaxntakenotes.africa to keep our hosting free for everyone.
             We will be back online automatically next month.
           </p>
           <div style={{ display: "flex", gap: "16px" }}>
@@ -519,7 +519,7 @@ export default function App() {
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       <div style={{ flexGrow: 1 }}>
-        
+
         {/* Section 1: Landing & Hero Section (Uses primary background) */}
         <section className="section-hero">
           <div className="container">
@@ -529,7 +529,7 @@ export default function App() {
                 <AfricaMicLogo />
                 Relax n Take Notes
               </div>
-              
+
               <div className="flex-center">
                 <div className="budget-badge">
                   <Clock size={14} className="text-teal" />
@@ -547,14 +547,14 @@ export default function App() {
                 Relax, I'll take notes.
               </h1>
               <h2 style={{ fontSize: "1.35rem", color: "var(--accent-cyan)", fontFamily: "var(--font-heading)", fontWeight: "600", marginTop: "0", marginBottom: "12px", letterSpacing: "0.01em" }}>
-                Africa's AI Powered Speech-to-Text and Speech-to-Text-to-Speech
+                Africa's AI Powered Speech-to-Text and Speech-to-Text-to-Speech Platform
               </h2>
               <p style={{ fontSize: "1.15rem", color: "var(--text-secondary)", lineHeight: "1.6", fontWeight: "500" }}>
                 Let's take your voice recordings and turn them into text. Use features such as Summary and Insights, and others, to manage the information in the recording. It's safe, fast and free. Record and upload audio files, process the information, manage the information and export when ready. Just upload, process and download. It's that easy!
               </p>
-              
+
               <div style={{ marginTop: "20px" }}>
-                <button 
+                <button
                   className="btn btn-primary"
                   onClick={() => {
                     const el = document.getElementById("workspace");
@@ -579,7 +579,7 @@ export default function App() {
           <div className="container">
             <p className="section-subtitle">Workflow & Blueprint</p>
             <h2 className="section-title">Core Capabilities</h2>
-            
+
             <div className="steps-grid">
               {/* Feature 1 */}
               <div className="step-card">
@@ -590,8 +590,8 @@ export default function App() {
                 <p className="step-desc">
                   Record directly in your browser or drag-and-drop any audio file. We support MP3, WAV, M4A, and WebM.
                 </p>
-                <div 
-                  className="step-image-accent" 
+                <div
+                  className="step-image-accent"
                   style={{ backgroundImage: `url(${soundwaveAccent})`, marginTop: "12px" }}
                 />
               </div>
@@ -605,8 +605,8 @@ export default function App() {
                 <p className="step-desc">
                   Select your category (meeting, song, memo) and fill in optional metadata context to feed the AI correct names and terms.
                 </p>
-                <div 
-                  className="step-image-accent" 
+                <div
+                  className="step-image-accent"
                   style={{ backgroundImage: `url(${processingAccent})`, marginTop: "12px" }}
                 />
               </div>
@@ -620,8 +620,8 @@ export default function App() {
                 <p className="step-desc">
                   Diarize voices instantly. Summarize transcript findings, parse action lists, or translate to global and local African languages.
                 </p>
-                <div 
-                  className="step-image-accent" 
+                <div
+                  className="step-image-accent"
                   style={{ backgroundImage: `url(${translationAccent})`, marginTop: "12px" }}
                 />
               </div>
@@ -635,8 +635,8 @@ export default function App() {
                 <p className="step-desc">
                   Synthesize summary text back into localized audio with accents and export directly to PDF, Word, or TXT formats.
                 </p>
-                <div 
-                  className="step-image-accent" 
+                <div
+                  className="step-image-accent"
                   style={{ backgroundImage: `url(${documentAccent})`, marginTop: "12px" }}
                 />
               </div>
@@ -655,7 +655,7 @@ export default function App() {
 
             {!transcript ? (
               <div className="card" style={{ marginTop: "20px" }}>
-                
+
                 {/* Notification Alert box */}
                 <div className="notification-card" style={{ marginBottom: "20px" }}>
                   <div className="notification-badge-icon">
@@ -671,27 +671,27 @@ export default function App() {
 
                 {/* Split Grid Layout */}
                 <div className="widget-grid">
-                  
+
                   {/* Left Column: Category & Audio source upload */}
                   <div className="widget-left-pane">
                     <div className="form-group">
                       <label>Recording Category</label>
                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                        <button 
+                        <button
                           className={`btn ${recordingType === "Meeting/Hearing" ? 'btn-primary' : 'btn-secondary'}`}
                           onClick={() => setRecordingType("Meeting/Hearing")}
                           style={{ justifyContent: "flex-start" }}
                         >
                           <Users size={14} /> Meeting or Hearing
                         </button>
-                        <button 
+                        <button
                           className={`btn ${recordingType === "Song" ? 'btn-primary' : 'btn-secondary'}`}
                           onClick={() => setRecordingType("Song")}
                           style={{ justifyContent: "flex-start" }}
                         >
                           <Music size={14} /> Song / Music Lyrics
                         </button>
-                        <button 
+                        <button
                           className={`btn ${recordingType === "Memo/Voice Note" ? 'btn-primary' : 'btn-secondary'}`}
                           onClick={() => setRecordingType("Memo/Voice Note")}
                           style={{ justifyContent: "flex-start" }}
@@ -703,11 +703,11 @@ export default function App() {
 
                     <div className="form-group" style={{ flexGrow: 1, display: "flex", flexDirection: "column" }}>
                       <label>Audio Source</label>
-                      
+
                       {!audioFile && !isRecording ? (
                         <div className="audio-source-options">
                           {/* Option 1: Record Live */}
-                          <div 
+                          <div
                             className="audio-option-btn btn-record"
                             onClick={startRecording}
                           >
@@ -715,9 +715,9 @@ export default function App() {
                             <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>Record Live</span>
                             <span className="text-muted-small" style={{ fontSize: "0.65rem", marginTop: "2px" }}>Capture from microphone</span>
                           </div>
-                          
+
                           {/* Option 2: Upload File */}
-                          <div 
+                          <div
                             className="audio-option-btn btn-upload"
                             onClick={() => document.getElementById("file-input").click()}
                             onDragOver={handleDragOver}
@@ -727,12 +727,12 @@ export default function App() {
                             <Upload size={22} style={{ marginBottom: "4px" }} />
                             <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>Upload Audio</span>
                             <span className="text-muted-small" style={{ fontSize: "0.65rem", marginTop: "2px" }}>Drag & drop or browse</span>
-                            <input 
-                              id="file-input" 
-                              type="file" 
-                              accept="audio/*" 
-                              style={{ display: "none" }} 
-                              onChange={handleFileSelect} 
+                            <input
+                              id="file-input"
+                              type="file"
+                              accept="audio/*"
+                              style={{ display: "none" }}
+                              onChange={handleFileSelect}
                             />
                           </div>
                         </div>
@@ -753,8 +753,8 @@ export default function App() {
                             <Clock size={12} className="text-error" />
                             <span>{formatTime(recordingDuration)}</span>
                           </div>
-                          <button 
-                            className="btn btn-secondary margin-top-md" 
+                          <button
+                            className="btn btn-secondary margin-top-md"
                             onClick={() => { stopRecording(); setAudioFile(null); }}
                             style={{ padding: "4px 10px", fontSize: "0.7rem" }}
                           >
@@ -777,12 +777,12 @@ export default function App() {
                             <label className="btn btn-secondary" htmlFor="file-input-change" style={{ cursor: "pointer", padding: "4px 8px", fontSize: "0.7rem" }}>
                               <Upload size={10} /> Replace
                             </label>
-                            <input 
-                              id="file-input-change" 
-                              type="file" 
-                              accept="audio/*" 
-                              style={{ display: "none" }} 
-                              onChange={handleFileSelect} 
+                            <input
+                              id="file-input-change"
+                              type="file"
+                              accept="audio/*"
+                              style={{ display: "none" }}
+                              onChange={handleFileSelect}
                             />
                           </div>
                         </div>
@@ -791,8 +791,8 @@ export default function App() {
 
                     {/* Action Button right under upload widget */}
                     <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                      <button 
-                        className="btn btn-primary" 
+                      <button
+                        className="btn btn-primary"
                         disabled={!audioFile || isProcessing || status.user_is_over_limit}
                         onClick={handleTranscribe}
                         style={{ width: "100%", padding: "12px" }}
@@ -813,41 +813,41 @@ export default function App() {
                       <div className="metadata-grid" style={{ marginTop: 0 }}>
                         <div className="form-group">
                           <label>Artist Name</label>
-                          <input 
-                            type="text" 
-                            placeholder="e.g. Miriam Makeba" 
-                            className="form-input" 
+                          <input
+                            type="text"
+                            placeholder="e.g. Miriam Makeba"
+                            className="form-input"
                             value={metadata.songArtist}
-                            onChange={(e) => setMetadata({...metadata, songArtist: e.target.value})}
+                            onChange={(e) => setMetadata({ ...metadata, songArtist: e.target.value })}
                           />
                         </div>
                         <div className="form-group">
                           <label>Song Title</label>
-                          <input 
-                            type="text" 
-                            placeholder="e.g. Qongqothwane" 
+                          <input
+                            type="text"
+                            placeholder="e.g. Qongqothwane"
                             className="form-input"
                             value={metadata.songTitle}
-                            onChange={(e) => setMetadata({...metadata, songTitle: e.target.value})}
+                            onChange={(e) => setMetadata({ ...metadata, songTitle: e.target.value })}
                           />
                         </div>
                         <div className="form-group">
                           <label>Recording Location</label>
-                          <input 
-                            type="text" 
-                            placeholder="e.g. Johannesburg Studio" 
+                          <input
+                            type="text"
+                            placeholder="e.g. Johannesburg Studio"
                             className="form-input"
                             value={metadata.songLocation}
-                            onChange={(e) => setMetadata({...metadata, songLocation: e.target.value})}
+                            onChange={(e) => setMetadata({ ...metadata, songLocation: e.target.value })}
                           />
                         </div>
                         <div className="form-group">
                           <label>Release Date</label>
-                          <input 
-                            type="date" 
+                          <input
+                            type="date"
                             className="form-input"
                             value={metadata.songDate}
-                            onChange={(e) => setMetadata({...metadata, songDate: e.target.value})}
+                            onChange={(e) => setMetadata({ ...metadata, songDate: e.target.value })}
                           />
                         </div>
                       </div>
@@ -857,70 +857,70 @@ export default function App() {
                       <div className="metadata-grid" style={{ marginTop: 0 }}>
                         <div className="form-group full-width">
                           <label>Meeting Title</label>
-                          <input 
-                            type="text" 
-                            placeholder="e.g. Q2 Architecture and Hosting Alignment" 
-                            className="form-input" 
+                          <input
+                            type="text"
+                            placeholder="e.g. Q2 Architecture and Hosting Alignment"
+                            className="form-input"
                             value={metadata.meetingTitle}
-                            onChange={(e) => setMetadata({...metadata, meetingTitle: e.target.value})}
+                            onChange={(e) => setMetadata({ ...metadata, meetingTitle: e.target.value })}
                           />
                         </div>
                         <div className="form-group">
                           <label>Meeting Date</label>
-                          <input 
-                            type="date" 
+                          <input
+                            type="date"
                             className="form-input"
                             value={metadata.meetingDate}
-                            onChange={(e) => setMetadata({...metadata, meetingDate: e.target.value})}
+                            onChange={(e) => setMetadata({ ...metadata, meetingDate: e.target.value })}
                           />
                         </div>
                         <div className="form-group">
                           <label>Time</label>
-                          <input 
-                            type="time" 
+                          <input
+                            type="time"
                             className="form-input"
                             value={metadata.meetingTime}
-                            onChange={(e) => setMetadata({...metadata, meetingTime: e.target.value})}
+                            onChange={(e) => setMetadata({ ...metadata, meetingTime: e.target.value })}
                           />
                         </div>
                         <div className="form-group">
                           <label>Location / Call Link</label>
-                          <input 
-                            type="text" 
-                            placeholder="e.g. Google Meet / Cape Town Room" 
+                          <input
+                            type="text"
+                            placeholder="e.g. Google Meet / Cape Town Room"
                             className="form-input"
                             value={metadata.meetingLocation}
-                            onChange={(e) => setMetadata({...metadata, meetingLocation: e.target.value})}
+                            onChange={(e) => setMetadata({ ...metadata, meetingLocation: e.target.value })}
                           />
                         </div>
                         <div className="form-group">
                           <label>Participants</label>
-                          <input 
-                            type="text" 
-                            placeholder="Names (Kwame, Sarah, Abeo)" 
+                          <input
+                            type="text"
+                            placeholder="Names (Kwame, Sarah, Abeo)"
                             className="form-input"
                             value={metadata.meetingParticipants}
-                            onChange={(e) => setMetadata({...metadata, meetingParticipants: e.target.value})}
+                            onChange={(e) => setMetadata({ ...metadata, meetingParticipants: e.target.value })}
                           />
                         </div>
                         <div className="form-group full-width">
                           <label>Purpose / Primary Goals</label>
-                          <input 
-                            type="text" 
-                            placeholder="e.g. Approve limits and confirm space" 
+                          <input
+                            type="text"
+                            placeholder="e.g. Approve limits and confirm space"
                             className="form-input"
                             value={metadata.meetingPurpose}
-                            onChange={(e) => setMetadata({...metadata, meetingPurpose: e.target.value})}
+                            onChange={(e) => setMetadata({ ...metadata, meetingPurpose: e.target.value })}
                           />
                         </div>
                         <div className="form-group full-width" style={{ marginBottom: 0 }}>
                           <label>Agenda</label>
-                          <textarea 
-                            placeholder="e.g. 1. Review project requirements&#10;2. Design system adjustments&#10;3. Final verification checks" 
-                            className="form-textarea" 
+                          <textarea
+                            placeholder="e.g. 1. Review project requirements&#10;2. Design system adjustments&#10;3. Final verification checks"
+                            className="form-textarea"
                             rows="2"
                             value={metadata.meetingAgenda}
-                            onChange={(e) => setMetadata({...metadata, meetingAgenda: e.target.value})}
+                            onChange={(e) => setMetadata({ ...metadata, meetingAgenda: e.target.value })}
                           />
                         </div>
                       </div>
@@ -930,21 +930,21 @@ export default function App() {
                       <div className="metadata-grid" style={{ marginTop: 0 }}>
                         <div className="form-group full-width">
                           <label>Memo Title</label>
-                          <input 
-                            type="text" 
-                            placeholder="e.g. Ideas on cold dark-mode colors and gradients" 
-                            className="form-input" 
+                          <input
+                            type="text"
+                            placeholder="e.g. Ideas on cold dark-mode colors and gradients"
+                            className="form-input"
                             value={metadata.memoTitle}
-                            onChange={(e) => setMetadata({...metadata, memoTitle: e.target.value})}
+                            onChange={(e) => setMetadata({ ...metadata, memoTitle: e.target.value })}
                           />
                         </div>
                         <div className="form-group full-width" style={{ marginBottom: 0 }}>
                           <label>Date</label>
-                          <input 
-                            type="date" 
+                          <input
+                            type="date"
                             className="form-input"
                             value={metadata.memoDate}
-                            onChange={(e) => setMetadata({...metadata, memoDate: e.target.value})}
+                            onChange={(e) => setMetadata({ ...metadata, memoDate: e.target.value })}
                           />
                         </div>
                       </div>
@@ -963,13 +963,13 @@ export default function App() {
                     <h2 style={{ fontSize: "0.85rem", color: "var(--text-primary)" }}>Diarized Transcript</h2>
                     <span className="text-muted-small">Edit text blocks freely below</span>
                   </div>
-                  <textarea 
-                    className="transcript-area" 
-                    value={transcript} 
+                  <textarea
+                    className="transcript-area"
+                    value={transcript}
                     onChange={(e) => setTranscript(e.target.value)}
                     style={{ flexGrow: 1 }}
                   />
-                  
+
                   {/* Document Downloads */}
                   <div className="margin-top-md" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "16px" }}>
                     <label style={{ display: "block", marginBottom: "8px", fontSize: "0.7rem", fontFamily: "var(--font-heading)", color: "var(--text-secondary)" }}>EXPORT DOCUMENT</label>
@@ -991,25 +991,25 @@ export default function App() {
                 <div className="card" style={{ display: "flex", flexDirection: "column" }}>
                   {/* Tab Navigation */}
                   <div className="tabs">
-                    <button 
+                    <button
                       className={`tab ${aiActiveTab === 'summary' ? 'active' : ''}`}
                       onClick={() => setAiActiveTab("summary")}
                     >
                       Summary
                     </button>
-                    <button 
+                    <button
                       className={`tab ${aiActiveTab === 'insights' ? 'active' : ''}`}
                       onClick={() => setAiActiveTab("insights")}
                     >
                       Insights
                     </button>
-                    <button 
+                    <button
                       className={`tab ${aiActiveTab === 'translation' ? 'active' : ''}`}
                       onClick={() => setAiActiveTab("translation")}
                     >
                       Translate
                     </button>
-                    <button 
+                    <button
                       className={`tab ${aiActiveTab === 'tts' ? 'active' : ''}`}
                       onClick={() => setAiActiveTab("tts")}
                     >
@@ -1024,8 +1024,8 @@ export default function App() {
                         <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
                           Synthesize the transcript into a beautiful markdown executive summary and chronologically organized meeting minutes.
                         </p>
-                        <button 
-                          className="btn btn-primary" 
+                        <button
+                          className="btn btn-primary"
                           disabled={isAiLoading}
                           onClick={() => triggerAiFeature("summary")}
                         >
@@ -1046,8 +1046,8 @@ export default function App() {
                         <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
                           Analyze discussion nodes to parse specific task assignments, action items, target owners, and primary themes.
                         </p>
-                        <button 
-                          className="btn btn-primary" 
+                        <button
+                          className="btn btn-primary"
                           disabled={isAiLoading}
                           onClick={() => triggerAiFeature("insights")}
                         >
@@ -1068,10 +1068,10 @@ export default function App() {
                         <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
                           Translate full speaker transcripts into global and regional African languages while maintaining speaker lines.
                         </p>
-                        
+
                         <div className="form-group" style={{ marginBottom: 0 }}>
                           <label>Target Language</label>
-                          <select 
+                          <select
                             className="form-select"
                             value={targetLanguage}
                             onChange={(e) => setTargetLanguage(e.target.value)}
@@ -1088,8 +1088,8 @@ export default function App() {
                           </select>
                         </div>
 
-                        <button 
-                          className="btn btn-primary" 
+                        <button
+                          className="btn btn-primary"
                           disabled={isAiLoading}
                           onClick={() => triggerAiFeature("translation")}
                         >
@@ -1110,10 +1110,10 @@ export default function App() {
                         <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
                           Re-voice the summary back into high-fidelity neural audio. Select accent characters for localized playback.
                         </p>
-                        
+
                         <div className="form-group" style={{ marginBottom: 0 }}>
                           <label>Voice Synthesis Accent</label>
-                          <select 
+                          <select
                             className="form-select"
                             value={ttsVoice}
                             onChange={(e) => setTtsVoice(e.target.value)}
@@ -1131,8 +1131,8 @@ export default function App() {
                           </select>
                         </div>
 
-                        <button 
-                          className="btn btn-accent" 
+                        <button
+                          className="btn btn-accent"
                           disabled={isTtsSynthesizing}
                           onClick={handleTtsSynthesis}
                         >
@@ -1142,10 +1142,10 @@ export default function App() {
                         {ttsAudioUrl && (
                           <div className="fade-in" style={{ background: "rgba(4, 6, 14, 0.6)", border: "1px solid var(--border-color)", padding: "12px", borderRadius: "var(--radius-md)", marginTop: "12px", display: "flex", flexDirection: "column", alignItems: "center" }}>
                             <span style={{ fontSize: "0.65rem", color: "var(--accent-cyan)", fontWeight: "700", marginBottom: "8px", fontFamily: "var(--font-heading)" }}>SYNTHESIS ACTIVE</span>
-                            <audio 
-                              ref={audioPlayerRef} 
-                              src={ttsAudioUrl} 
-                              controls 
+                            <audio
+                              ref={audioPlayerRef}
+                              src={ttsAudioUrl}
+                              controls
                               style={{ width: "100%" }}
                             />
                           </div>
@@ -1156,7 +1156,7 @@ export default function App() {
                 </div>
               </div>
             )}
-            
+
             {/* Visual Page Break */}
           </div>
         </section>
