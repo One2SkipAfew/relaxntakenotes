@@ -524,7 +524,7 @@ export default function App() {
         <section className="section-hero">
           <div className="container">
             {/* Header */}
-            <header className="header" style={{ marginBottom: "16px" }}>
+            <header className="header" style={{ marginBottom: "4px" }}>
               <div className="logo" onClick={() => { setTranscript(""); setAudioFile(null); }}>
                 <AfricaMicLogo />
                 Relax n Take Notes
