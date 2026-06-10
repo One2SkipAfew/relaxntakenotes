@@ -134,6 +134,7 @@ export default function App() {
   const [processingStep, setProcessingStep] = useState("");
   const [transcript, setTranscript] = useState("");
   const [documentTitle, setDocumentTitle] = useState("");
+  const [speakerMap, setSpeakerMap] = useState({});
 
   const [aiActiveTab, setAiActiveTab] = useState("summary");
   const [aiSummary, setAiSummary] = useState("");
@@ -256,6 +257,7 @@ export default function App() {
     setIsProcessing(true);
     setProcessingStep("Uploading audio payload and initiating transcription...");
     setTranscript("");
+    setSpeakerMap({});
 
     let selectedMeta = {};
     let finalTitle = "";
@@ -318,6 +320,25 @@ export default function App() {
       }
 
       setTranscript(transcriptText);
+
+      // Extract unique speakers to initialize speakerMap
+      if (data.paragraphs && data.paragraphs.length > 0) {
+        const uniqueSpeakers = [...new Set(data.paragraphs.map(p => p.speaker))];
+        const initialMap = {};
+        uniqueSpeakers.forEach(s => {
+          initialMap[s] = s;
+        });
+        setSpeakerMap(initialMap);
+      } else {
+        const matches = Array.from(transcriptText.matchAll(/^(Speaker \d+|Speaker [A-Za-z0-9]+):/gm)).map(m => m[1]);
+        const uniqueSpeakers = [...new Set(matches)];
+        const initialMap = {};
+        uniqueSpeakers.forEach(s => {
+          initialMap[s] = s;
+        });
+        setSpeakerMap(initialMap);
+      }
+
       setIsProcessing(false);
       fetchStatus();
 
@@ -325,6 +346,24 @@ export default function App() {
       alert(`Error transcribing audio: ${err.message}`);
       setIsProcessing(false);
     }
+  };
+
+  const renameSpeaker = (key, rawName) => {
+    // Strip trailing colons or whitespace to prevent formatting issues
+    const newName = rawName.replace(/:+$/, "").trim();
+    const oldName = speakerMap[key] || key;
+    // Escape special regex characters in oldName just in case
+    const escapedOldName = oldName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(`^${escapedOldName}:`, 'gm');
+    
+    // Update transcript text by replacing oldName with newName
+    setTranscript(prev => prev.replace(regex, `${newName}:`));
+    
+    // Update mapping state
+    setSpeakerMap(prev => ({
+      ...prev,
+      [key]: rawName
+    }));
   };
 
   const triggerAiFeature = async (type) => {
@@ -963,6 +1002,33 @@ export default function App() {
                     <h2 style={{ fontSize: "0.85rem", color: "var(--text-primary)" }}>Diarized Transcript</h2>
                     <span className="text-muted-small">Edit text blocks freely below</span>
                   </div>
+
+                  {/* Speaker Mapping Box */}
+                  {Object.keys(speakerMap).length > 0 && (
+                    <div className="speaker-mapping-container" style={{ marginBottom: "16px", padding: "12px", background: "rgba(10, 15, 30, 0.4)", border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)" }}>
+                      <label style={{ display: "block", fontSize: "0.65rem", fontFamily: "var(--font-heading)", fontWeight: 700, color: "var(--accent-cyan)", letterSpacing: "0.5px", textTransform: "uppercase", marginBottom: "8px" }}>
+                        Assign Speaker Names
+                      </label>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "10px" }}>
+                        {Object.keys(speakerMap).map((key) => (
+                          <div key={key} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span style={{ fontSize: "0.65rem", color: "var(--text-secondary)", fontFamily: "var(--font-heading)", fontWeight: 700 }}>
+                              {key}
+                            </span>
+                            <input
+                              type="text"
+                              className="form-input"
+                              style={{ padding: "4px 8px", fontSize: "0.75rem", background: "rgba(4, 6, 14, 0.85)" }}
+                              value={speakerMap[key]}
+                              placeholder={`Name for ${key}`}
+                              onChange={(e) => renameSpeaker(key, e.target.value)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <textarea
                     className="transcript-area"
                     value={transcript}
