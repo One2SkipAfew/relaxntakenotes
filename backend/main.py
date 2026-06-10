@@ -146,26 +146,79 @@ async def transcribe_audio(
     file: UploadFile = File(...),
     user_hash: str = Depends(get_user_hash)
 ):
-    if not DEEPGRAM_API_KEY:
-        raise HTTPException(status_code=500, detail="Deepgram API key is not configured on the server.")
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase client is not configured on the server.")
-        
-    # Check limits first
-    user_seconds, global_seconds = get_usage_stats(user_hash)
+    # Detect if we are in mock mode due to placeholder credentials
+    is_mock_mode = (
+        not DEEPGRAM_API_KEY 
+        or DEEPGRAM_API_KEY == "your_deepgram_api_key_here"
+        or "fake" in DEEPGRAM_API_KEY.lower()
+    )
     
-    if (global_seconds / 60.0) >= MONTHLY_LIMIT_MINUTES:
-        raise HTTPException(status_code=403, detail="Global platform transcription budget has been exceeded for this month. Please try again next month.")
+    # Check limits if Supabase is configured
+    if supabase:
+        user_seconds, global_seconds = get_usage_stats(user_hash)
         
-    if (user_seconds / 60.0) >= USER_MONTHLY_LIMIT_MINUTES:
-        raise HTTPException(status_code=403, detail="You have reached your personal monthly transcription limit. Upgrade to a paid plan for unlimited hours.")
+        if (global_seconds / 60.0) >= MONTHLY_LIMIT_MINUTES:
+            raise HTTPException(status_code=403, detail="Global platform transcription budget has been exceeded for this month. Please try again next month.")
+            
+        if (user_seconds / 60.0) >= USER_MONTHLY_LIMIT_MINUTES:
+            raise HTTPException(status_code=403, detail="You have reached your personal monthly transcription limit. Upgrade to a paid plan for unlimited hours.")
+    else:
+        user_seconds, global_seconds = 0, 0
 
     try:
         # Read the file content
         file_bytes = await file.read()
         
+        if is_mock_mode:
+            # Realistic 5-minute pre-screening interview diarized mock transcript
+            duration_seconds = 300  # 5 minutes
+            
+            paragraphs = [
+                {
+                    "speaker": "Speaker 0",
+                    "text": "Hi Sarah, thanks for joining the sync. Let's discuss the hiring pipeline and what systems our HR department is using to pre-screen candidates' CVs."
+                },
+                {
+                    "speaker": "Speaker 1",
+                    "text": "Hi John. Currently, we utilize Greenhouse as our main Applicant Tracking System, or ATS. When candidates upload their resumes, the system scans them for key skills like Python, React, and system architecture."
+                },
+                {
+                    "speaker": "Speaker 0",
+                    "text": "Got it. But I'm concerned about keyword filtering bias. Some candidates might be highly skilled but didn't write the exact keywords. How do we address that?"
+                },
+                {
+                    "speaker": "Speaker 1",
+                    "text": "That is a valid concern. To prevent that, we have set up the ATS to only screen out applicants who miss fundamental requirements, like years of experience. For the rest, we do a manual screening pass. It takes our team about 5 minutes per CV to do a quick portfolio check."
+                },
+                {
+                    "speaker": "Speaker 0",
+                    "text": "Good. Now, during the initial verbal phone screening, who is taking notes? It seems we spend too much time writing summary reports after each call."
+                },
+                {
+                    "speaker": "Speaker 1",
+                    "text": "Right now, the recruiters take notes manually while talking. It is quite distracting, and they often miss important details. If we use Deepgram's speaker diarization, we could automatically transcribe the calls and map who said what."
+                },
+                {
+                    "speaker": "Speaker 0",
+                    "text": "Exactly. Let's test the 'Relax n Take Notes' platform today with a sample call to see if it maps participants correctly and extracts clear takeaways for our HR files. If this works, we'll roll it out to the whole team next week."
+                },
+                {
+                    "speaker": "Speaker 1",
+                    "text": "Perfect, let's start the test run now and see how the AI note-taking and summarization performs."
+                }
+            ]
+            
+            return {
+                "duration_seconds": duration_seconds,
+                "paragraphs": paragraphs,
+                "raw_transcript": " ".join(p["text"] for p in paragraphs)
+            }
+            
+        # Real transcription using Deepgram
+        if not deepgram_client:
+            raise HTTPException(status_code=500, detail="Deepgram client is not initialized.")
+            
         # Deepgram Prerecorded transcription options
-        # We enable diarization (speaker separation), smart formatting, and punctuation
         options = PrerecordedOptions(
             model="nova-2",
             smart_format=True,
@@ -219,14 +272,14 @@ async def transcribe_audio(
                     })
 
         # Save usage to Supabase
-        try:
-            supabase.table("usage_logs").insert({
-                "user_hash": user_hash,
-                "duration_seconds": duration_seconds
-            }).execute()
-        except Exception as db_err:
-            # We log but do not fail the transcription to avoid ruining user experience
-            print(f"Error saving usage log to Supabase: {db_err}")
+        if supabase:
+            try:
+                supabase.table("usage_logs").insert({
+                    "user_hash": user_hash,
+                    "duration_seconds": duration_seconds
+                }).execute()
+            except Exception as db_err:
+                print(f"Error saving usage log to Supabase: {db_err}")
 
         # Return results
         return {
