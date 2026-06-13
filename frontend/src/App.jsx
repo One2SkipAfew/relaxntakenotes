@@ -15,7 +15,6 @@ import {
   AlertTriangle,
   Clock,
   Languages,
-  TrendingUp,
   Cpu
 } from "lucide-react";
 import { jsPDF } from "jspdf";
@@ -147,6 +146,94 @@ export default function App() {
   const [ttsVoice, setTtsVoice] = useState("en-ZA-LeahNeural");
   const [isTtsSynthesizing, setIsTtsSynthesizing] = useState(false);
   const [ttsAudioUrl, setTtsAudioUrl] = useState(null);
+
+  const downloadFile = (format) => {
+    if (!transcript) return;
+
+    let content = "";
+    let mimeType = "";
+    let extension = "";
+    let isBase64 = false;
+
+    if (format === "txt") {
+      content = transcript;
+      mimeType = "text/plain;charset=utf-8";
+      extension = "txt";
+    } else if (format === "doc") {
+      content = `\ufeff<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><title>${documentTitle}</title><style>body { font-family: Arial, sans-serif; line-height: 1.6; }</style></head>
+<body>
+  <h2>${documentTitle}</h2>
+  <p style="white-space: pre-wrap;">${transcript.replace(/\\n/g, '<br/>').replace(/\n/g, '<br/>')}</p>
+</body>
+</html>`;
+      mimeType = "application/msword;charset=utf-8";
+      extension = "doc";
+    } else if (format === "pdf") {
+      try {
+        const doc = new jsPDF();
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(16);
+        doc.text(documentTitle || "Relax n Take Notes Transcript", 14, 20);
+
+        doc.setFontSize(10);
+        const splitText = doc.splitTextToSize(transcript, 180);
+
+        let y = 30;
+        for (let i = 0; i < splitText.length; i++) {
+          if (y > 280) {
+            doc.addPage();
+            y = 20;
+          }
+          doc.text(splitText[i], 14, y);
+          y += 6;
+        }
+        content = doc.output('datauristring');
+        mimeType = "application/pdf";
+        extension = "pdf";
+        isBase64 = true;
+      } catch (err) {
+        console.error("Error generating PDF:", err);
+        alert("Error generating PDF.");
+        return;
+      }
+    }
+
+    const filename = getSafeFilename(extension);
+
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = `${API_BASE_URL}/api/download`;
+    form.target = "_self";
+
+    const contentInput = document.createElement("input");
+    contentInput.type = "hidden";
+    contentInput.name = "content";
+    contentInput.value = content;
+    form.appendChild(contentInput);
+
+    const filenameInput = document.createElement("input");
+    filenameInput.type = "hidden";
+    filenameInput.name = "filename";
+    filenameInput.value = filename;
+    form.appendChild(filenameInput);
+
+    const mimeInput = document.createElement("input");
+    mimeInput.type = "hidden";
+    mimeInput.name = "mime_type";
+    mimeInput.value = mimeType;
+    form.appendChild(mimeInput);
+
+    const base64Input = document.createElement("input");
+    base64Input.type = "hidden";
+    base64Input.name = "is_base64";
+    base64Input.value = isBase64 ? "true" : "false";
+    form.appendChild(base64Input);
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+  };
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -403,12 +490,16 @@ export default function App() {
       };
     }
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000);
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/ai-features`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
+        signal: controller.signal,
         body: JSON.stringify({
           transcript: transcript,
           feature_type: type,
@@ -431,8 +522,13 @@ export default function App() {
         setAiTranslation(data.result);
       }
     } catch (err) {
-      alert(`AI Error: ${err.message}`);
+      if (err.name === "AbortError") {
+        alert("AI request timed out. Please try again.");
+      } else {
+        alert(`AI Error: ${err.message}`);
+      }
     } finally {
+      clearTimeout(timeout);
       setIsAiLoading(false);
     }
   };
@@ -448,12 +544,16 @@ export default function App() {
 
     const cleanText = transcript.replace(/Speaker \d+:/g, "");
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000);
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/tts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
+        signal: controller.signal,
         body: JSON.stringify({
           text: cleanText.substring(0, 3000),
           voice: ttsVoice
@@ -468,8 +568,13 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       setTtsAudioUrl(url);
     } catch (err) {
-      alert(`TTS error: ${err.message}`);
+      if (err.name === "AbortError") {
+        alert("TTS request timed out. Please try again.");
+      } else {
+        alert(`TTS error: ${err.message}`);
+      }
     } finally {
+      clearTimeout(timeout);
       setIsTtsSynthesizing(false);
     }
   };
@@ -482,7 +587,11 @@ export default function App() {
 
   const renderMarkdown = (md) => {
     if (!md) return "";
-    let html = md;
+    // Escape HTML entities first to prevent XSS from AI-generated content
+    let html = md
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
     html = html.replace(/^### (.*$)/gim, '<h3 style="font-family: var(--font-heading); color: var(--accent-cyan); font-size: 0.9rem; margin: 16px 0 8px 0;">$1</h3>');
     html = html.replace(/^## (.*$)/gim, '<h2 style="font-family: var(--font-heading); color: var(--text-primary); font-size: 1.1rem; margin: 20px 0 10px 0;">$1</h2>');
     html = html.replace(/^# (.*$)/gim, '<h1 style="font-family: var(--font-heading); color: var(--text-primary); font-size: 1.3rem; margin: 24px 0 12px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">$1</h1>');
@@ -492,58 +601,17 @@ export default function App() {
     return html;
   };
 
-  const downloadTXT = () => {
-    const blob = new Blob([transcript], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${documentTitle.toLowerCase().replace(/\s+/g, "_")}_transcript.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const getSafeFilename = (extension) => {
+    const baseTitle = documentTitle.trim() || "transcript";
+    const safeTitle = baseTitle
+      .toLowerCase()
+      .replace(/[\/\\:*?"<>|]/g, "") // Remove characters that are invalid in Windows/macOS/Linux filenames
+      .replace(/\s+/g, "_")          // Replace spaces with underscores
+      .replace(/^_+|_+$/g, "");      // Strip leading/trailing underscores
+    return `${safeTitle}_transcript.${extension}`;
   };
 
-  const downloadWord = () => {
-    const htmlContent = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head><title>${documentTitle}</title><style>body { font-family: Arial, sans-serif; line-height: 1.6; }</style></head>
-      <body>
-        <h2>${documentTitle}</h2>
-        <p style="white-space: pre-wrap;">${transcript.replace(/\n/g, '<br/>')}</p>
-      </body>
-      </html>
-    `;
-    const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${documentTitle.toLowerCase().replace(/\s+/g, "_")}_transcript.doc`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
-  const downloadPDF = () => {
-    const doc = new jsPDF();
-    doc.setFont("helvetica", "normal");
-
-    doc.setFontSize(16);
-    doc.text(documentTitle || "Relax n Take Notes Transcript", 14, 20);
-
-    doc.setFontSize(10);
-    const splitText = doc.splitTextToSize(transcript, 180);
-
-    let y = 30;
-    for (let i = 0; i < splitText.length; i++) {
-      if (y > 280) {
-        doc.addPage();
-        y = 20;
-      }
-      doc.text(splitText[i], 14, y);
-      y += 6;
-    }
-    doc.save(`${documentTitle.toLowerCase().replace(/\s+/g, "_")}_transcript.pdf`);
-  };
 
   if (status.is_over_budget) {
     return (
@@ -1061,13 +1129,25 @@ export default function App() {
                   <div className="margin-top-md" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "16px" }}>
                     <label style={{ display: "block", marginBottom: "8px", fontSize: "0.7rem", fontFamily: "var(--font-heading)", color: "var(--text-secondary)" }}>EXPORT DOCUMENT</label>
                     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                      <button className="btn btn-secondary" onClick={downloadTXT} style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => downloadFile("txt")}
+                        style={{ padding: "6px 12px", fontSize: "0.75rem", display: "inline-flex", alignItems: "center", gap: "6px", color: "inherit" }}
+                      >
                         <Download size={12} /> Plain Text
                       </button>
-                      <button className="btn btn-secondary" onClick={downloadWord} style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => downloadFile("doc")}
+                        style={{ padding: "6px 12px", fontSize: "0.75rem", display: "inline-flex", alignItems: "center", gap: "6px", color: "inherit" }}
+                      >
                         <Download size={12} /> MS Word (.doc)
                       </button>
-                      <button className="btn btn-secondary" onClick={downloadPDF} style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => downloadFile("pdf")}
+                        style={{ padding: "6px 12px", fontSize: "0.75rem", display: "inline-flex", alignItems: "center", gap: "6px", color: "inherit" }}
+                      >
                         <Download size={12} /> Adobe PDF
                       </button>
                     </div>

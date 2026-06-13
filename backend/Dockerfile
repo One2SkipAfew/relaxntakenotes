@@ -1,11 +1,11 @@
 # Use official lightweight Python image
 FROM python:3.11-slim
 
-# Install system dependencies for edge-tts and pyaudio / portaudio
+# Install system dependencies for edge-tts
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    portaudio19-dev \
     ffmpeg \
+    portaudio19-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up user with UID 1000 per Hugging Face Spaces requirements
@@ -25,6 +25,10 @@ COPY --chown=user:user main.py .
 
 # Expose the default port for Hugging Face Spaces
 EXPOSE 7860
+
+# Container healthcheck
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/health')" || exit 1
 
 # Run FastAPI app with Uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860", "--timeout-keep-alive", "1800"]
