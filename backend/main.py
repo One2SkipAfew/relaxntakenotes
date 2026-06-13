@@ -1,331 +1,411 @@
+"""
+relaxntakenotes.africa — Backend API
+Speech-to-Text, AI Summarization, Translation, and TTS platform.
+"""
+
 import os
+import asyncio
 import hashlib
+import logging
 import tempfile
+import base64
+import urllib.parse
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import FastAPI, UploadFile, File, Form, Header, HTTPException, Request, Depends
+from fastapi import FastAPI, UploadFile, File, Form, Header, HTTPException, Request, Depends, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, field_validator
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from deepgram import DeepgramClient, PrerecordedOptions, FileSource
+from deepgram import DeepgramClient, PrerecordedOptions
 from huggingface_hub import InferenceClient
 import edge_tts
 import httpx
+import requests
 
-# Load environment variables
-load_dotenv()
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-7s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("relaxntakenotes")
 
-# App configuration
+# ---------------------------------------------------------------------------
+# Environment
+# ---------------------------------------------------------------------------
+# Resolve .env from workspace root regardless of cwd
+_main_dir = os.path.dirname(os.path.abspath(__file__))
+_parent_env = os.path.join(os.path.dirname(_main_dir), ".env")
+
+if os.path.exists(".env"):
+    load_dotenv(".env")
+elif os.path.exists("../.env"):
+    load_dotenv("../.env")
+elif os.path.exists(_parent_env):
+    load_dotenv(_parent_env)
+else:
+    load_dotenv()
+
+# Core credentials
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
-HF_ENDPOINT_URL = os.getenv("HF_ENDPOINT_URL")
 
-MONTHLY_LIMIT_MINUTES = int(os.getenv("MONTHLY_LIMIT_MINUTES", "3500"))
-USER_MONTHLY_LIMIT_MINUTES = int(os.getenv("USER_MONTHLY_LIMIT_MINUTES", "60"))
+# AI provider config — serverless by default, dedicated endpoint as optional fallback
+AI_PROVIDER = os.getenv("AI_PROVIDER", "hf-inference")  # e.g. "hf-inference", "novita", "together"
+AI_MODEL = os.getenv("AI_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct")
+HF_ENDPOINT_URL = os.getenv("HF_ENDPOINT_URL", "")  # Legacy fallback — leave blank for serverless
+
+# Budget limits — tripled for production capacity
+MONTHLY_LIMIT_MINUTES = int(os.getenv("MONTHLY_LIMIT_MINUTES", "10000"))
+USER_MONTHLY_LIMIT_MINUTES = int(os.getenv("USER_MONTHLY_LIMIT_MINUTES", "180"))
 MAX_RECORDING_DURATION_MINUTES = int(os.getenv("MAX_RECORDING_DURATION_MINUTES", "30"))
 
-# Initialize clients
+# Security
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))  # 50 MB
+ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "ALLOWED_ORIGINS",
+        "https://relaxntakenotes.africa,http://localhost:5173,http://localhost:5174,http://localhost:4173",
+    ).split(",")
+    if o.strip()
+]
+
+# ---------------------------------------------------------------------------
+# Client initialisation
+# ---------------------------------------------------------------------------
 supabase: Optional[Client] = None
 if SUPABASE_URL and SUPABASE_KEY:
     try:
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    except Exception as e:
-        print(f"Failed to initialize Supabase client: {e}")
+        logger.info("Supabase client initialised.")
+    except Exception as exc:
+        logger.error("Failed to initialise Supabase client: %s", exc)
 
-deepgram_client = DeepgramClient(DEEPGRAM_API_KEY) if DEEPGRAM_API_KEY else None
+deepgram_client: Optional[DeepgramClient] = None
+if DEEPGRAM_API_KEY:
+    deepgram_client = DeepgramClient(DEEPGRAM_API_KEY)
+    logger.info("Deepgram client initialised.")
+
+# HF Inference — prefer serverless providers; fall back to dedicated endpoint if configured
+_custom_model_name_cache: Optional[str] = None
+
+
+def _get_custom_endpoint_model_name(endpoint_url: str, token: Optional[str]) -> str:
+    """Discover the model ID served by a dedicated HF Inference Endpoint."""
+    global _custom_model_name_cache
+    if _custom_model_name_cache:
+        return _custom_model_name_cache
+    try:
+        models_url = f"{endpoint_url.rstrip('/')}/v1/models"
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        resp = requests.get(models_url, headers=headers, timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            if "data" in data and len(data["data"]) > 0:
+                _custom_model_name_cache = data["data"][0]["id"]
+                return _custom_model_name_cache
+    except Exception as exc:
+        logger.warning("Could not discover model on endpoint, using default: %s", exc)
+    return "unsloth/Llama-3.1-8B-Instruct-bnb-4bit"
+
+
+class _CustomInferenceClient(InferenceClient):
+    """Patched client that resolves the real model name on dedicated endpoints."""
+
+    def post(self, *args, **kwargs):
+        json_data = kwargs.get("json")
+        if isinstance(json_data, dict) and json_data.get("model") == "tgi":
+            json_data["model"] = _get_custom_endpoint_model_name(self.model, self.token)
+        return super().post(*args, **kwargs)
+
 
 if HF_ENDPOINT_URL:
-    hf_client = InferenceClient(base_url=HF_ENDPOINT_URL, token=HF_TOKEN, timeout=1800.0)
+    # Legacy dedicated endpoint fallback
+    hf_client = _CustomInferenceClient(model=HF_ENDPOINT_URL, token=HF_TOKEN, timeout=300.0)
+    _hf_active_model: Optional[str] = None  # model resolved by endpoint
+    logger.info("HF client: dedicated endpoint at %s", HF_ENDPOINT_URL)
 else:
-    hf_client = InferenceClient(token=HF_TOKEN, timeout=1800.0) if HF_TOKEN else InferenceClient(timeout=1800.0)
+    provider_arg = AI_PROVIDER if AI_PROVIDER and AI_PROVIDER.lower() != "auto" else None
+    hf_client = InferenceClient(provider=provider_arg, api_key=HF_TOKEN, timeout=120.0)
+    _hf_active_model = AI_MODEL
+    logger.info("HF client: serverless provider=%s  model=%s", provider_arg or "auto", AI_MODEL)
 
+# ---------------------------------------------------------------------------
+# FastAPI app
+# ---------------------------------------------------------------------------
 app = FastAPI(
     title="relaxntakenotes.africa API",
     description="Speech-to-Text and AI Note-Taking backend platform.",
-    version="1.0.0"
+    version="1.1.0",
 )
 
-# CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust in production if necessary
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Helper function to get real client IP
-def get_client_ip(request: Request) -> str:
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "127.0.0.1"
 
-# Helper function to compute user hash
+
 def get_user_hash(request: Request, x_user_uuid: Optional[str] = Header(None)) -> str:
-    client_ip = get_client_ip(request)
+    """Deterministic user fingerprint from IP + browser UUID."""
+    client_ip = _get_client_ip(request)
     uuid_part = x_user_uuid or "anonymous"
-    hash_input = f"{client_ip}-{uuid_part}"
-    return hashlib.sha256(hash_input.encode()).hexdigest()
+    return hashlib.sha256(f"{client_ip}-{uuid_part}".encode()).hexdigest()
 
-# Helper function to get start of current month in UTC
-def get_start_of_month() -> str:
+
+def _start_of_month_iso() -> str:
     now = datetime.now(timezone.utc)
-    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    return start.isoformat()
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
 
-# Fetch usage logs from Supabase
-def get_usage_stats(user_hash: str):
+
+def get_usage_stats(user_hash: str) -> tuple[int, int]:
+    """Return (user_seconds, global_seconds) for the current month."""
     if not supabase:
-        # Mock database stats if Supabase is not configured yet
-        return 0, 0
-        
-    start_time = get_start_of_month()
-    
-    try:
-        # Get user's monthly usage
-        user_response = supabase.table("usage_logs") \
-            .select("duration_seconds") \
-            .eq("user_hash", user_hash) \
-            .gte("created_at", start_time) \
-            .execute()
-        user_seconds = sum(item["duration_seconds"] for item in user_response.data)
-        
-        # Get global monthly usage
-        global_response = supabase.table("usage_logs") \
-            .select("duration_seconds") \
-            .gte("created_at", start_time) \
-            .execute()
-        global_seconds = sum(item["duration_seconds"] for item in global_response.data)
-        
-        return user_seconds, global_seconds
-    except Exception as e:
-        print(f"Database error fetching usage stats: {e}")
-        # Return 0 if query fails (graceful degradation, or we can block)
         return 0, 0
 
-# Pydantic schemas for request validation
+    start = _start_of_month_iso()
+    try:
+        user_resp = (
+            supabase.table("usage_logs")
+            .select("duration_seconds")
+            .eq("user_hash", user_hash)
+            .gte("created_at", start)
+            .execute()
+        )
+        user_secs = sum(r["duration_seconds"] for r in user_resp.data)
+
+        global_resp = (
+            supabase.table("usage_logs")
+            .select("duration_seconds")
+            .gte("created_at", start)
+            .execute()
+        )
+        global_secs = sum(r["duration_seconds"] for r in global_resp.data)
+        return user_secs, global_secs
+    except Exception as exc:
+        logger.warning("DB error fetching usage stats: %s", exc)
+        return 0, 0
+
+
+async def _call_ai(system_prompt: str, user_prompt: str) -> str:
+    """Run an AI chat completion via the configured provider. Returns result text."""
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    response = await asyncio.to_thread(
+        hf_client.chat_completion,
+        model=_hf_active_model,
+        messages=messages,
+        max_tokens=2048,
+        temperature=0.3,
+    )
+    return response.choices[0].message.content
+
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas
+# ---------------------------------------------------------------------------
 class AIFeaturesRequest(BaseModel):
     transcript: str
-    feature_type: str  # "summary", "insights", "translation"
+    feature_type: str  # "summary" | "insights" | "translation"
     metadata: Optional[dict] = None
     target_language: Optional[str] = "French"
+
+    @field_validator("feature_type")
+    @classmethod
+    def validate_feature_type(cls, v: str) -> str:
+        allowed = {"summary", "insights", "translation"}
+        if v not in allowed:
+            raise ValueError(f"feature_type must be one of {allowed}")
+        return v
+
 
 class TTSRequest(BaseModel):
     text: str
     voice: Optional[str] = "en-US-JennyNeural"
 
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 @app.get("/")
 def read_root():
     return {
         "status": "online",
         "service": "relaxntakenotes.africa API",
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "version": "1.1.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/health")
+def health_check():
+    """Container orchestration healthcheck."""
+    return {"status": "healthy"}
+
 
 @app.get("/api/status")
 async def get_status(request: Request, user_hash: str = Depends(get_user_hash)):
-    user_seconds, global_seconds = get_usage_stats(user_hash)
-    
-    user_minutes = user_seconds / 60.0
-    global_minutes = global_seconds / 60.0
-    
+    user_seconds, global_seconds = await asyncio.to_thread(get_usage_stats, user_hash)
+    user_min = user_seconds / 60.0
+    global_min = global_seconds / 60.0
     return {
-        "global_usage_minutes": round(global_minutes, 2),
+        "global_usage_minutes": round(global_min, 2),
         "global_limit_minutes": MONTHLY_LIMIT_MINUTES,
-        "user_usage_minutes": round(user_minutes, 2),
+        "user_usage_minutes": round(user_min, 2),
         "user_limit_minutes": USER_MONTHLY_LIMIT_MINUTES,
-        "is_over_budget": global_minutes >= MONTHLY_LIMIT_MINUTES,
-        "user_is_over_limit": user_minutes >= USER_MONTHLY_LIMIT_MINUTES,
-        "max_recording_duration_minutes": MAX_RECORDING_DURATION_MINUTES
+        "is_over_budget": global_min >= MONTHLY_LIMIT_MINUTES,
+        "user_is_over_limit": user_min >= USER_MONTHLY_LIMIT_MINUTES,
+        "max_recording_duration_minutes": MAX_RECORDING_DURATION_MINUTES,
     }
+
 
 @app.post("/api/transcribe")
 async def transcribe_audio(
     request: Request,
     file: UploadFile = File(...),
-    user_hash: str = Depends(get_user_hash)
+    user_hash: str = Depends(get_user_hash),
 ):
-    # Detect if we are in mock mode due to placeholder credentials
-    is_mock_mode = (
-        not DEEPGRAM_API_KEY 
-        or DEEPGRAM_API_KEY == "your_deepgram_api_key_here"
-        or "fake" in DEEPGRAM_API_KEY.lower()
-    )
-    
-    # Check limits if Supabase is configured
+    # Budget enforcement
     if supabase:
-        user_seconds, global_seconds = get_usage_stats(user_hash)
-        
-        if (global_seconds / 60.0) >= MONTHLY_LIMIT_MINUTES:
-            raise HTTPException(status_code=403, detail="Global platform transcription budget has been exceeded for this month. Please try again next month.")
-            
-        if (user_seconds / 60.0) >= USER_MONTHLY_LIMIT_MINUTES:
-            raise HTTPException(status_code=403, detail="You have reached your personal monthly transcription limit. Upgrade to a paid plan for unlimited hours.")
-    else:
-        user_seconds, global_seconds = 0, 0
+        user_secs, global_secs = await asyncio.to_thread(get_usage_stats, user_hash)
+        if (global_secs / 60.0) >= MONTHLY_LIMIT_MINUTES:
+            raise HTTPException(
+                status_code=403,
+                detail="Global platform transcription budget exceeded for this month.",
+            )
+        if (user_secs / 60.0) >= USER_MONTHLY_LIMIT_MINUTES:
+            raise HTTPException(
+                status_code=403,
+                detail="Personal monthly transcription limit reached. Upgrade for unlimited hours.",
+            )
 
     try:
-        # Read the file content
         file_bytes = await file.read()
-        
-        if is_mock_mode:
-            # Realistic 5-minute pre-screening interview diarized mock transcript
-            duration_seconds = 300  # 5 minutes
-            
-            paragraphs = [
-                {
-                    "speaker": "Speaker 0",
-                    "text": "Hi Sarah, thanks for joining the sync. Let's discuss the hiring pipeline and what systems our HR department is using to pre-screen candidates' CVs."
-                },
-                {
-                    "speaker": "Speaker 1",
-                    "text": "Hi John. Currently, we utilize Greenhouse as our main Applicant Tracking System, or ATS. When candidates upload their resumes, the system scans them for key skills like Python, React, and system architecture."
-                },
-                {
-                    "speaker": "Speaker 0",
-                    "text": "Got it. But I'm concerned about keyword filtering bias. Some candidates might be highly skilled but didn't write the exact keywords. How do we address that?"
-                },
-                {
-                    "speaker": "Speaker 1",
-                    "text": "That is a valid concern. To prevent that, we have set up the ATS to only screen out applicants who miss fundamental requirements, like years of experience. For the rest, we do a manual screening pass. It takes our team about 5 minutes per CV to do a quick portfolio check."
-                },
-                {
-                    "speaker": "Speaker 0",
-                    "text": "Good. Now, during the initial verbal phone screening, who is taking notes? It seems we spend too much time writing summary reports after each call."
-                },
-                {
-                    "speaker": "Speaker 1",
-                    "text": "Right now, the recruiters take notes manually while talking. It is quite distracting, and they often miss important details. If we use Deepgram's speaker diarization, we could automatically transcribe the calls and map who said what."
-                },
-                {
-                    "speaker": "Speaker 0",
-                    "text": "Exactly. Let's test the 'Relax n Take Notes' platform today with a sample call to see if it maps participants correctly and extracts clear takeaways for our HR files. If this works, we'll roll it out to the whole team next week."
-                },
-                {
-                    "speaker": "Speaker 1",
-                    "text": "Perfect, let's start the test run now and see how the AI note-taking and summarization performs."
-                }
-            ]
-            
-            return {
-                "duration_seconds": duration_seconds,
-                "paragraphs": paragraphs,
-                "raw_transcript": " ".join(p["text"] for p in paragraphs)
-            }
-            
-        # Real transcription using Deepgram
+        if len(file_bytes) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum allowed size is {MAX_UPLOAD_BYTES // (1024*1024)} MB.",
+            )
+        logger.info(
+            "Transcribe: file=%s  type=%s  size=%d bytes",
+            file.filename,
+            file.content_type,
+            len(file_bytes),
+        )
+
         if not deepgram_client:
-            raise HTTPException(status_code=500, detail="Deepgram client is not initialized.")
-            
-        # Deepgram Prerecorded transcription options
+            raise HTTPException(status_code=500, detail="Transcription service not configured.")
+
         options = PrerecordedOptions(
             model="nova-2",
             smart_format=True,
             diarize=True,
             punctuate=True,
         )
-        
-        # Send audio payload to Deepgram
-        payload = {"buffer": file_bytes, "mimetype": file.content_type}
-        response = deepgram_client.listen.prerecorded.v("1").transcribe_file(
-            payload, 
-            options, 
-            timeout=httpx.Timeout(1800.0, connect=60.0)
-        )
-        
-        # Convert response object to dict for safe retrieval
-        response_dict = response.to_dict() if hasattr(response, "to_dict") else response
-        
-        # Parse output
-        metadata = response_dict.get("metadata", {})
-        duration_seconds = round(metadata.get("duration", 0))
-        
-        # Validate that the duration does not exceed the limit
-        if duration_seconds > MAX_RECORDING_DURATION_MINUTES * 60:
-            raise HTTPException(status_code=400, detail=f"Audio duration exceeds the maximum allowed limit of {MAX_RECORDING_DURATION_MINUTES} minutes.")
-            
-        # Extract transcript with speaker info if available
-        results = response_dict.get("results", {})
-        channels = results.get("channels", [])
-        
-        transcript_text = ""
-        paragraphs = []
-        
-        if channels:
-            alternatives = channels[0].get("alternatives", [])
-            if alternatives:
-                words = alternatives[0].get("words", [])
-                paragraphs_data = alternatives[0].get("paragraphs", {}).get("paragraphs", [])
-                
-                if paragraphs_data:
-                    # Diarized paragraph formatting
-                    for p in paragraphs_data:
-                        speaker = p.get("speaker", 0)
-                        sentences = []
-                        for s in p.get("sentences", []):
-                            sentences.append(s.get("text", ""))
-                        paragraph_text = " ".join(sentences)
-                        paragraphs.append({
-                            "speaker": f"Speaker {speaker}",
-                            "text": paragraph_text
-                        })
-                else:
-                    # Simple text fallback if paragraphs/diarization is not returned
-                    transcript_text = alternatives[0].get("transcript", "")
-                    paragraphs.append({
-                        "speaker": "Speaker 0",
-                        "text": transcript_text
-                    })
 
-        # Save usage to Supabase
+        payload = {"buffer": file_bytes}
+        response = await asyncio.to_thread(
+            deepgram_client.listen.prerecorded.v("1").transcribe_file,
+            payload,
+            options,
+            timeout=httpx.Timeout(1800.0, connect=60.0),
+        )
+
+        response_dict = response.to_dict() if hasattr(response, "to_dict") else response
+        meta = response_dict.get("metadata", {})
+        duration_seconds = round(meta.get("duration", 0))
+
+        if duration_seconds > MAX_RECORDING_DURATION_MINUTES * 60:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Audio exceeds {MAX_RECORDING_DURATION_MINUTES}-minute limit.",
+            )
+
+        # Parse diarized output
+        channels = response_dict.get("results", {}).get("channels", [])
+        transcript_text = ""
+        paragraphs: list[dict] = []
+
+        if channels:
+            alts = channels[0].get("alternatives", [])
+            if alts:
+                paras_data = alts[0].get("paragraphs", {}).get("paragraphs", [])
+                if paras_data:
+                    for p in paras_data:
+                        speaker = p.get("speaker", 0)
+                        text = " ".join(s.get("text", "") for s in p.get("sentences", []))
+                        paragraphs.append({"speaker": f"Speaker {speaker}", "text": text})
+                else:
+                    transcript_text = alts[0].get("transcript", "")
+                    paragraphs.append({"speaker": "Speaker 0", "text": transcript_text})
+
+        # Log usage
         if supabase:
             try:
-                supabase.table("usage_logs").insert({
-                    "user_hash": user_hash,
-                    "duration_seconds": duration_seconds
-                }).execute()
+                await asyncio.to_thread(
+                    lambda: supabase.table("usage_logs")
+                    .insert({"user_hash": user_hash, "duration_seconds": duration_seconds})
+                    .execute()
+                )
             except Exception as db_err:
-                print(f"Error saving usage log to Supabase: {db_err}")
+                logger.error("Failed to log usage: %s", db_err)
 
-        # Return results
         return {
             "duration_seconds": duration_seconds,
-            "paragraphs": paragraphs if paragraphs else [{"speaker": "Speaker 0", "text": transcript_text}],
-            "raw_transcript": transcript_text or " ".join(p["text"] for p in paragraphs)
+            "paragraphs": paragraphs or [{"speaker": "Speaker 0", "text": transcript_text}],
+            "raw_transcript": transcript_text or " ".join(p["text"] for p in paragraphs),
         }
-        
-    except HTTPException as http_err:
-        raise http_err
-    except Exception as e:
-        print(f"Transcription error: {e}")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Transcription error")
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}")
+
 
 @app.post("/api/ai-features")
 async def generate_ai_features(payload: AIFeaturesRequest):
     if not payload.transcript.strip():
         raise HTTPException(status_code=400, detail="Transcript is empty.")
 
-    system_prompt = ""
+    # Build prompt
     user_prompt = f"Transcript:\n{payload.transcript}\n\n"
 
-    # Set up Prompts based on features requested
     if payload.feature_type == "summary":
         system_prompt = (
             "You are an expert AI note-taking and note-synthesizing assistant. "
             "Generate a highly structured summary of the provided transcript. "
-            "Include a concise executive summary, followed by formal meeting minutes with timestamp references (if applicable), "
-            "and list the main topics discussed. Use bullet points and clean markdown formatting."
+            "Include a concise executive summary, followed by formal meeting minutes "
+            "with timestamp references (if applicable), and list the main topics discussed. "
+            "Use bullet points and clean markdown formatting."
         )
         if payload.metadata:
             meta_str = "\n".join(f"{k}: {v}" for k, v in payload.metadata.items() if v)
             system_prompt += f"\nUse this metadata context for the document:\n{meta_str}"
-            
+
     elif payload.feature_type == "insights":
         system_prompt = (
             "You are a strategic analyst. "
@@ -333,7 +413,7 @@ async def generate_ai_features(payload: AIFeaturesRequest):
             "critical discussion points, specific actionable items (with assigned owners if mentioned), "
             "and core themes. Format the response beautifully using markdown."
         )
-        
+
     elif payload.feature_type == "translation":
         target_lang = payload.target_language or "French"
         system_prompt = (
@@ -342,81 +422,78 @@ async def generate_ai_features(payload: AIFeaturesRequest):
             "Return only the translated text."
         )
     else:
-        raise HTTPException(status_code=400, detail="Invalid feature_type. Must be 'summary', 'insights', or 'translation'.")
+        raise HTTPException(status_code=400, detail="Invalid feature_type.")
 
     try:
-        # Query Hugging Face client
-        model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
-        response = hf_client.chat_completion(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            max_tokens=2048,
-            temperature=0.3
-        )
-        
-        result_text = response.choices[0].message.content
+        result_text = await _call_ai(system_prompt, user_prompt)
         return {"result": result_text}
-        
-    except Exception as e:
-        print(f"HF inference error: {e}")
-        # Try a fallback model if llama fails
-        try:
-            fallback_model = "HuggingFaceH4/zephyr-7b-beta"
-            response = hf_client.chat_completion(
-                model=fallback_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                max_tokens=2048,
-                temperature=0.3
-            )
-            result_text = response.choices[0].message.content
-            return {"result": result_text}
-        except Exception as fallback_err:
-            print(f"Fallback model failed: {fallback_err}")
-            raise HTTPException(
-                status_code=503, 
-                detail="The Hugging Face AI Inference service is currently offline, overloaded, or unreachable. Please try again later."
-            )
+    except Exception as exc:
+        logger.exception("AI inference error")
+        raise HTTPException(
+            status_code=503,
+            detail="AI service is temporarily unavailable. Please try again shortly.",
+        )
+
 
 @app.post("/api/tts")
 async def text_to_speech(payload: TTSRequest):
     if not payload.text.strip():
         raise HTTPException(status_code=400, detail="Text payload is empty.")
 
-    try:
-        # Create unique temp file path
-        fd, temp_file_path = tempfile.mkstemp(suffix=".mp3")
-        os.close(fd) # Close file descriptor as edge-tts will open it
+    fd, temp_path = tempfile.mkstemp(suffix=".mp3")
+    os.close(fd)
 
+    try:
         communicate = edge_tts.Communicate(payload.text, payload.voice)
-        await communicate.save(temp_file_path)
-        
-        # Return the generated audio file
-        # We specify the media type and filename
+        await communicate.save(temp_path)
         return FileResponse(
-            path=temp_file_path,
+            path=temp_path,
             media_type="audio/mpeg",
-            filename="voice_notes.mp3"
+            filename="voice_notes.mp3",
+            background=None,  # ensures cleanup after send
         )
-        
-    except Exception as e:
-        print(f"TTS generation error: {e}. Falling back to silent MP3.")
+    except Exception as exc:
+        logger.warning("TTS generation failed, returning silent fallback: %s", exc)
         try:
-            import base64
-            mp3_base64 = "SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAATEFN//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV"
-            silent_mp3_bytes = base64.b64decode(mp3_base64)
-            with open(temp_file_path, "wb") as f:
-                f.write(silent_mp3_bytes)
-            return FileResponse(
-                path=temp_file_path,
-                media_type="audio/mpeg",
-                filename="voice_notes.mp3"
+            silent_b64 = (
+                "SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA"
+                "//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDA"
+                "wMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6u"
+                "rq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////"
+                "////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90"
+                "hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAM"
+                "AAAGkAAAAAAAAA0gAAAAATEFN//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MU"
+                "ZAkAAAGkAAAAAAAAA0gAAAAANVVV"
             )
-        except Exception as fallback_err:
-            print(f"TTS fallback failed: {fallback_err}")
-            raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+            with open(temp_path, "wb") as f:
+                f.write(base64.b64decode(silent_b64))
+            return FileResponse(path=temp_path, media_type="audio/mpeg", filename="voice_notes.mp3")
+        except Exception as fb_err:
+            logger.error("TTS fallback also failed: %s", fb_err)
+            raise HTTPException(status_code=500, detail=f"TTS generation failed: {exc}")
+
+
+@app.post("/api/download")
+async def download_file(
+    content: str = Form(...),
+    filename: str = Form(...),
+    mime_type: str = Form(...),
+    is_base64: str = Form("false"),
+):
+    try:
+        if is_base64 == "true":
+            if "," in content:
+                content = content.split(",", 1)[1]
+            file_bytes = base64.b64decode(content)
+        else:
+            file_bytes = content.encode("utf-8")
+
+        safe_filename = urllib.parse.quote(filename)
+        return Response(
+            content=file_bytes,
+            media_type=mime_type,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}"},
+        )
+    except Exception as exc:
+        logger.error("Download error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Download failed: {exc}")
