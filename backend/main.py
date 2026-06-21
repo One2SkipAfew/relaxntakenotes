@@ -178,6 +178,19 @@ def _start_of_month_iso() -> str:
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
 
 
+def _execute_with_retry(query, max_retries=3):
+    import time
+    for i in range(max_retries):
+        try:
+            return query.execute()
+        except Exception as exc:
+            if i == max_retries - 1:
+                raise
+            if "ConnectionTerminated" in str(exc) or "ReadError" in str(exc) or "ProtocolError" in str(exc):
+                time.sleep(0.5)
+            else:
+                raise
+
 def get_usage_stats(user_hash: str) -> tuple[int, int]:
     """Return (user_seconds, global_seconds) for the current month."""
     if not supabase:
@@ -185,20 +198,18 @@ def get_usage_stats(user_hash: str) -> tuple[int, int]:
 
     start = _start_of_month_iso()
     try:
-        user_resp = (
+        user_resp = _execute_with_retry(
             supabase.table("usage_logs")
             .select("duration_seconds")
             .eq("user_hash", user_hash)
             .gte("created_at", start)
-            .execute()
         )
         user_secs = sum(r["duration_seconds"] for r in user_resp.data)
 
-        global_resp = (
+        global_resp = _execute_with_retry(
             supabase.table("usage_logs")
             .select("duration_seconds")
             .gte("created_at", start)
-            .execute()
         )
         global_secs = sum(r["duration_seconds"] for r in global_resp.data)
         return user_secs, global_secs
@@ -366,9 +377,10 @@ async def transcribe_audio(
         if supabase:
             try:
                 await asyncio.to_thread(
-                    lambda: supabase.table("usage_logs")
-                    .insert({"user_hash": user_hash, "duration_seconds": duration_seconds})
-                    .execute()
+                    lambda: _execute_with_retry(
+                        supabase.table("usage_logs")
+                        .insert({"user_hash": user_hash, "duration_seconds": duration_seconds})
+                    )
                 )
             except Exception as db_err:
                 logger.error("Failed to log usage: %s", db_err)
