@@ -1,0 +1,24 @@
+Relax N TakeNotes
+
+HuggingFace Access Token (Read): hf_***
+
+Deepgram key: ***
+
+Supabase anon public key: ***
+
+Supabase Service Role Key: ***
+
+Supabase Publishable Key: sb_publishable_***
+
+Secret Key: sb_secret_***
+
+Supabase Project URL: https://hqyarkuznldfbabibnxw.supabase.co
+
+
+One2SkipAfew/relaxntakenotes-api
+https://huggingface.co/spaces/One2SkipAfew/relaxntakenotes-api
+
+
+git remote set-url origin https://github.com/One2SkipAfew/relaxntakenotes.git
+
+<TOKEN_REMOVED>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Mic,
   Square,
@@ -240,11 +240,7 @@ export default function App() {
   const recordingTimerRef = useRef(null);
   const audioPlayerRef = useRef(null);
 
-  useEffect(() => {
-    fetchStatus();
-  }, []);
-
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/status`, {
         headers: {
@@ -258,7 +254,12 @@ export default function App() {
     } catch (err) {
       console.error("Error fetching usage status:", err);
     }
-  };
+  }, [userUuid]);
+
+  useEffect(() => {
+    // eslint-disable-next-line
+    fetchStatus();
+  }, [fetchStatus]);
 
   const startRecording = async () => {
     audioChunksRef.current = [];
@@ -348,35 +349,12 @@ export default function App() {
     setSpeakerMap({});
     setSpeakerInputs({});
 
-    let selectedMeta = {};
-    let finalTitle = "";
+    let finalTitle;
     if (recordingType === "Song") {
-      selectedMeta = {
-        type: "Song",
-        artist: metadata.songArtist,
-        title: metadata.songTitle,
-        location: metadata.songLocation,
-        date: metadata.songDate
-      };
       finalTitle = metadata.songTitle || metadata.songArtist ? `${metadata.songArtist} - ${metadata.songTitle}` : "Untitled Song";
     } else if (recordingType === "Meeting/Hearing") {
-      selectedMeta = {
-        type: "Meeting/Hearing",
-        title: metadata.meetingTitle,
-        date: metadata.meetingDate,
-        time: metadata.meetingTime,
-        location: metadata.meetingLocation,
-        participants: metadata.meetingParticipants,
-        purpose: metadata.meetingPurpose,
-        agenda: metadata.meetingAgenda
-      };
       finalTitle = metadata.meetingTitle || `Meeting ${metadata.meetingDate}`;
     } else {
-      selectedMeta = {
-        type: "Memo/Voice Note",
-        title: metadata.memoTitle,
-        date: metadata.memoDate
-      };
       finalTitle = metadata.memoTitle || `Memo ${metadata.memoDate}`;
     }
     setDocumentTitle(finalTitle);
@@ -447,6 +425,7 @@ export default function App() {
     const oldName = speakerMap[key] || key;
     if (oldName === newName) return; // No change
     
+    // eslint-disable-next-line no-useless-escape
     const escapedOldName = oldName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
     const regex = new RegExp(`^${escapedOldName}:`, 'gm');
     
@@ -468,7 +447,7 @@ export default function App() {
     if (!transcript) return;
     setIsAiLoading(true);
 
-    let selectedMeta = {};
+    let selectedMeta;
     if (recordingType === "Song") {
       selectedMeta = {
         type: "Song",
@@ -605,6 +584,7 @@ export default function App() {
     const baseTitle = documentTitle.trim() || "transcript";
     const safeTitle = baseTitle
       .toLowerCase()
+      // eslint-disable-next-line no-useless-escape
       .replace(/[\/\\:*?"<>|]/g, "") // Remove characters that are invalid in Windows/macOS/Linux filenames
       .replace(/\s+/g, "_")          // Replace spaces with underscores
       .replace(/^_+|_+$/g, "");      // Strip leading/trailing underscores
@@ -836,7 +816,7 @@ export default function App() {
 
                           {/* Option 2: Upload File */}
                           <div
-                            className="audio-option-btn btn-upload"
+                            className={`audio-option-btn btn-upload ${dragOver ? 'drag-over' : ''}`}
                             onClick={() => document.getElementById("file-input").click()}
                             onDragOver={handleDragOver}
                             onDragLeave={handleDragLeave}
@@ -915,7 +895,7 @@ export default function App() {
                         onClick={handleTranscribe}
                         style={{ width: "100%", padding: "12px" }}
                       >
-                        {isProcessing ? "Processing..." : "Start Transcribing"} <ArrowRight size={14} />
+                        {isProcessing ? (processingStep || "Processing...") : "Start Transcribing"} <ArrowRight size={14} />
                       </button>
                     </div>
                   </div>
