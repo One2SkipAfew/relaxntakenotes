@@ -18,6 +18,9 @@ import {
   Cpu
 } from "lucide-react";
 import { jsPDF } from "jspdf";
+import LiveStreamView from "./LiveStreamView";
+import AuthModal from "./AuthModal";
+import { supabase } from "./supabaseClient";
 
 // Import visual assets
 import soundwaveAccent from "./assets/soundwave_accent.png";
@@ -95,6 +98,28 @@ const getOrCreateUserUuid = () => {
 
 export default function App() {
   const userUuid = getOrCreateUserUuid();
+
+  // Authentication State
+  const [user, setUser] = useState(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalTab, setAuthModalTab] = useState('signin');
+
+  useEffect(() => {
+    // Check active sessions and sets the user
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    // Listen for changes on auth state (sign in, sign out, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Navigation state: "home" or "livestream"
+  const [currentView, setCurrentView] = useState("home");
 
   const [status, setStatus] = useState({
     global_usage_minutes: 0,
@@ -593,6 +618,11 @@ export default function App() {
 
 
 
+  // LiveStream view takes over the entire page
+  if (currentView === "livestream") {
+    return <LiveStreamView onBack={() => setCurrentView("home")} user={user} />;
+  }
+
   if (status.is_over_budget) {
     return (
       <div className="container fade-in">
@@ -627,14 +657,57 @@ export default function App() {
                 <AfricaMicLogo />
                 Relax n Take Notes
               </div>
+          <nav className="header-nav" style={{ display: "flex", alignItems: "center", gap: "12px", marginLeft: "20px" }}>
+            {user ? (
+              <>
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => alert("Resources feature coming soon.")}
+                  style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                >
+                  Resources
+                </button>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => supabase.auth.signOut()}
+                  style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                >
+                  Profile (Sign Out)
+                </button>
+              </>
+            ) : (
+              <>
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={() => {
+                    setAuthModalTab('signin');
+                    setIsAuthModalOpen(true);
+                  }}
+                  style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                >
+                  Sign In
+                </button>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setAuthModalTab('register');
+                    setIsAuthModalOpen(true);
+                  }}
+                  style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                >
+                  Register
+                </button>
+              </>
+            )}
+          </nav>
+        </header>
 
-              <div className="flex-center">
-                <div className="budget-badge">
-                  <Clock size={14} className="text-teal" />
-                  <span>Used: {status.user_usage_minutes} / {status.user_limit_minutes} min (You)</span>
-                </div>
-              </div>
-            </header>
+        {/* Auth Modal */}
+        <AuthModal 
+          isOpen={isAuthModalOpen} 
+          onClose={() => setIsAuthModalOpen(false)} 
+          defaultTab={authModalTab}
+        />
 
             {/* Hero Copy Content */}
             <div style={{ textAlign: "center", maxWidth: "900px", margin: "0 auto" }}>
@@ -651,7 +724,7 @@ export default function App() {
                 Let's take your voice recordings and turn them into text. Use features such as Summary and Insights, and others, to manage the information in the recording. It's safe, fast and free. Record and upload audio files, process the information, manage the information and export when ready. Just upload, process and download. It's that easy!
               </p>
 
-              <div style={{ marginTop: "20px" }}>
+              <div style={{ marginTop: "20px", display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap" }}>
                 <button
                   className="btn btn-primary"
                   onClick={() => {
@@ -663,6 +736,13 @@ export default function App() {
                   style={{ padding: "14px 28px", fontSize: "0.9rem", letterSpacing: "0.02em" }}
                 >
                   Go to Note Synthesis Engine <ArrowRight size={16} />
+                </button>
+                <button
+                  className="btn btn-accent"
+                  onClick={() => setCurrentView("livestream")}
+                  style={{ padding: "14px 28px", fontSize: "0.9rem", letterSpacing: "0.02em", background: "linear-gradient(135deg, rgba(138, 43, 226, 0.8) 0%, rgba(0, 240, 255, 0.6) 100%)", border: "none", color: "#fff" }}
+                >
+                  <Mic size={16} /> Go Live — Real-Time Transcription
                 </button>
               </div>
             </div>
