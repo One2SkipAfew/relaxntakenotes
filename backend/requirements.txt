@@ -3,13 +3,13 @@ uvicorn==0.30.1
 python-multipart==0.0.9
 huggingface-hub>=0.25.0
 edge-tts==7.2.8
-supabase==2.5.1
+supabase>=2.12.0
 deepgram-sdk==3.3.0
 python-dotenv==1.0.1
 pytest==8.2.2
 pytest-asyncio==0.23.7
-httpx<0.28,>=0.24
+httpx>=0.28.1
 requests>=2.31.0
 pyaudio>=0.2.14
-websockets<13,>=12.0
+websockets>=13.0
 google-genai>=1.0.0

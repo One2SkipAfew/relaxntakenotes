@@ -92,6 +92,7 @@ export default function LiveStreamView({ onBack }) {
   const [isGeneratingPackage, setIsGeneratingPackage] = useState(false);
   const [isSavingSession, setIsSavingSession] = useState(false);
   const [sessionSaved, setSessionSaved] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
   // Refs
   const wsRef = useRef(null);
@@ -118,6 +119,7 @@ export default function LiveStreamView({ onBack }) {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return; // Only for logged-in users
       
+      setCurrentUser(session.user);
       const { data, error } = await supabase
         .from("context_documents")
         .select("*")
@@ -192,7 +194,7 @@ export default function LiveStreamView({ onBack }) {
           });
         }, 1000);
 
-        // Set up MediaRecorder to capture webm audio chunks
+        // Set up MediaRecorder to capture webm audio chunks for saving
         const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
         mediaRecorderRef.current = recorder;
         audioChunksRef.current = [];
@@ -201,6 +203,11 @@ export default function LiveStreamView({ onBack }) {
           if (e.data.size > 0) audioChunksRef.current.push(e.data);
         };
         recorder.start(250);
+
+        // Set up audio processing with AudioContext for PCM streaming to Deepgram
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)({
+          sampleRate: 16000,
+        });
         audioContextRef.current = audioContext;
 
         const source = audioContext.createMediaStreamSource(stream);
@@ -224,15 +231,6 @@ export default function LiveStreamView({ onBack }) {
 
         source.connect(processor);
         processor.connect(audioContext.destination);
-
-        // Also start a MediaRecorder to save audio for playback later
-        const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-        mediaRecorderRef.current = recorder;
-        audioChunksRef.current = [];
-        recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) audioChunksRef.current.push(e.data);
-        };
-        recorder.start(250);
       };
 
       ws.onmessage = (event) => {
@@ -860,24 +858,26 @@ export default function LiveStreamView({ onBack }) {
             </button>
           </div>
 
-          {/* Document Upload Section */}
-          <div className="ls-docs-section">
-            <label className="ls-doc-upload-btn">
-              <Upload size={12} />
-              <span>Upload Org Docs</span>
-              <input
-                type="file"
-                accept=".txt,.md,.csv,.pdf,.doc,.docx"
-                style={{ display: "none" }}
-                onChange={handleDocUpload}
-              />
-            </label>
-            {contextDocs.length > 0 && (
-              <span className="ls-docs-count">
-                {contextDocs.length} doc{contextDocs.length > 1 ? "s" : ""} loaded
-              </span>
-            )}
-          </div>
+          {/* Document Upload Section - Authenticated Users Only */}
+          {currentUser && (
+            <div className="ls-docs-section">
+              <label className="ls-doc-upload-btn">
+                <Upload size={12} />
+                <span>Upload Org Docs</span>
+                <input
+                  type="file"
+                  accept=".txt,.md,.csv,.pdf,.doc,.docx"
+                  style={{ display: "none" }}
+                  onChange={handleDocUpload}
+                />
+              </label>
+              {contextDocs.length > 0 && (
+                <span className="ls-docs-count">
+                  {contextDocs.length} doc{contextDocs.length > 1 ? "s" : ""} loaded
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="ls-factcheck-body">
             {factCheckResults.length === 0 ? (
