@@ -73,9 +73,15 @@ MAX_RECORDING_DURATION_MINUTES = int(os.getenv("MAX_RECORDING_DURATION_MINUTES",
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
 
+# AssemblyAI — alternative transcription provider for long-form audio
+ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY", "")
+TRANSCRIPTION_PROVIDER = os.getenv("TRANSCRIPTION_PROVIDER", "auto").lower()  # auto | deepgram | assemblyai
+AUTO_ROUTE_THRESHOLD_MB = int(os.getenv("AUTO_ROUTE_THRESHOLD_MB", "50"))
+AUTO_ROUTE_THRESHOLD_BYTES = AUTO_ROUTE_THRESHOLD_MB * 1024 * 1024
+
 # Security
-MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(350 * 1024 * 1024)))  # 350 MB
-MAX_LIVESTREAM_SECONDS = int(os.getenv("MAX_LIVESTREAM_SECONDS", "5400"))  # 1.5 hours
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(170 * 1024 * 1024)))  # 170 MB
+MAX_LIVESTREAM_SECONDS = int(os.getenv("MAX_LIVESTREAM_SECONDS", "7200"))  # 2 hours
 ALLOWED_ORIGINS = [
     o.strip()
     for o in os.getenv(
@@ -100,6 +106,18 @@ deepgram_client: Optional[DeepgramClient] = None
 if DEEPGRAM_API_KEY:
     deepgram_client = DeepgramClient(DEEPGRAM_API_KEY)
     logger.info("Deepgram client initialised.")
+
+# AssemblyAI client
+assemblyai_available = False
+if ASSEMBLYAI_API_KEY:
+    try:
+        import assemblyai as aai
+        aai.settings.api_key = ASSEMBLYAI_API_KEY
+        aai.settings.http_timeout = 1800.0  # Allow large file uploads to take up to 30 mins
+        assemblyai_available = True
+        logger.info("AssemblyAI client initialised.")
+    except ImportError:
+        logger.warning("AssemblyAI SDK not installed — pip install assemblyai")
 
 # HF Inference — prefer serverless providers; fall back to dedicated endpoint if configured
 _custom_model_name_cache: Optional[str] = None
@@ -387,6 +405,205 @@ async def get_status(request: Request, user_hash: str = Depends(get_user_hash)):
     }
 
 
+# ---------------------------------------------------------------------------
+# Transcription provider helpers
+# ---------------------------------------------------------------------------
+async def _transcribe_with_deepgram(file_bytes: bytes, filename: str) -> dict:
+    """Transcribe audio using Deepgram (fast, best for shorter files)."""
+    if not deepgram_client:
+        raise HTTPException(status_code=500, detail="Deepgram transcription service not configured.")
+
+    options = PrerecordedOptions(
+        model="nova-2",
+        smart_format=True,
+        diarize=True,
+        punctuate=True,
+    )
+
+    payload = {"buffer": file_bytes}
+    response = await asyncio.to_thread(
+        deepgram_client.listen.prerecorded.v("1").transcribe_file,
+        payload,
+        options,
+        timeout=httpx.Timeout(1800.0, connect=60.0),
+    )
+
+    response_dict = response.to_dict() if hasattr(response, "to_dict") else response
+    meta = response_dict.get("metadata", {})
+    duration_seconds = round(meta.get("duration", 0))
+
+    # Parse diarized output
+    channels = response_dict.get("results", {}).get("channels", [])
+    transcript_text = ""
+    paragraphs: list[dict] = []
+
+    if channels:
+        alts = channels[0].get("alternatives", [])
+        if alts:
+            paras_data = alts[0].get("paragraphs", {}).get("paragraphs", [])
+            if paras_data:
+                for p in paras_data:
+                    speaker = p.get("speaker", 0)
+                    text = " ".join(s.get("text", "") for s in p.get("sentences", []))
+                    paragraphs.append({"speaker": f"Speaker {speaker}", "text": text})
+            else:
+                transcript_text = alts[0].get("transcript", "")
+                paragraphs.append({"speaker": "Speaker 0", "text": transcript_text})
+
+    return {
+        "duration_seconds": duration_seconds,
+        "paragraphs": paragraphs or [{"speaker": "Speaker 0", "text": transcript_text}],
+        "raw_transcript": transcript_text or " ".join(p["text"] for p in paragraphs),
+        "provider": "deepgram",
+    }
+
+
+async def _transcribe_with_assemblyai(file_bytes: bytes, filename: str) -> dict:
+    """Transcribe audio using AssemblyAI (handles long-form audio natively via async processing)."""
+    if not assemblyai_available:
+        raise HTTPException(status_code=500, detail="AssemblyAI transcription service not configured.")
+
+    import assemblyai as aai
+    import requests
+
+    logger.info("AssemblyAI: uploading %s (%d bytes) manually via requests...", filename, len(file_bytes))
+
+    # 1. Upload the file manually using requests to bypass httpx large-file timeouts
+    headers = {'authorization': aai.settings.api_key}
+    
+    def _compress_audio(raw_bytes: bytes) -> bytes:
+        try:
+            import av
+            import io
+            logger.info("AssemblyAI: Compressing large audio file to 32kbps mono mp3...")
+            in_buffer = io.BytesIO(raw_bytes)
+            input_container = av.open(in_buffer)
+            
+            in_stream = None
+            for s in input_container.streams:
+                if s.type == 'audio':
+                    in_stream = s
+                    break
+            if not in_stream:
+                return raw_bytes
+                
+            out_buffer = io.BytesIO()
+            output_container = av.open(out_buffer, mode="w", format="mp3")
+            out_stream = output_container.add_stream("libmp3lame", rate=16000)
+            out_stream.bit_rate = 32000
+            out_stream.layout = "mono"
+            
+            resampler = av.AudioResampler(
+                format="s16p", 
+                layout="mono", 
+                rate=16000
+            )
+            
+            for frame in input_container.decode(in_stream):
+                for rframe in resampler.resample(frame):
+                    for packet in out_stream.encode(rframe):
+                        output_container.mux(packet)
+                        
+            for frame in resampler.resample(None):
+                for packet in out_stream.encode(frame):
+                    output_container.mux(packet)
+                    
+            for packet in out_stream.encode(None):
+                output_container.mux(packet)
+                
+            output_container.close()
+            compressed = out_buffer.getvalue()
+            logger.info("AssemblyAI: Compression complete. Size reduced from %d to %d bytes", len(raw_bytes), len(compressed))
+            return compressed
+        except Exception as e:
+            logger.warning("AssemblyAI: Audio compression skipped due to error: %s", str(e))
+            return raw_bytes
+
+    def upload_file():
+        import time
+        
+        # Compress if file is > 20MB
+        payload_bytes = file_bytes
+        if len(payload_bytes) > 20 * 1024 * 1024:
+            payload_bytes = _compress_audio(payload_bytes)
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                logger.info("AssemblyAI: upload attempt %d/%d (direct payload)...", attempt + 1, max_retries)
+                response = requests.post(
+                    'https://api.assemblyai.com/v2/upload',
+                    headers=headers,
+                    data=payload_bytes,  # Pass raw bytes directly; avoids chunking overhead
+                    timeout=3600
+                )
+                response.raise_for_status()
+                return response.json()['upload_url']
+            except Exception as e:
+                logger.error("AssemblyAI upload attempt %d failed: %s", attempt + 1, str(e))
+                if attempt == max_retries - 1:
+                    raise
+                time.sleep(2 ** attempt)
+
+    try:
+        upload_url = await asyncio.to_thread(upload_file)
+        logger.info("AssemblyAI: upload complete. Submitting transcription job...")
+    except Exception as e:
+        raise Exception(f"AssemblyAI upload error: {str(e)}")
+
+    # 2. Submit the transcription job using the upload URL
+    config = aai.TranscriptionConfig(
+        speaker_labels=True,
+        punctuate=True,
+        format_text=True,
+    )
+
+    transcriber = aai.Transcriber()
+
+    # This submits the job and polls until complete
+    transcript = await asyncio.to_thread(
+        transcriber.transcribe, upload_url, config=config
+    )
+
+    if transcript.status == aai.TranscriptStatus.error:
+        raise Exception(f"AssemblyAI error: {transcript.error}")
+
+    duration_seconds = round((transcript.audio_duration or 0))
+
+    # Parse utterances into the standard paragraph format
+    paragraphs: list[dict] = []
+    if transcript.utterances:
+        for utt in transcript.utterances:
+            paragraphs.append({
+                "speaker": f"Speaker {utt.speaker}",
+                "text": utt.text,
+            })
+
+    raw_transcript = transcript.text or ""
+
+    return {
+        "duration_seconds": duration_seconds,
+        "paragraphs": paragraphs or [{"speaker": "Speaker A", "text": raw_transcript}],
+        "raw_transcript": raw_transcript,
+        "provider": "assemblyai",
+    }
+
+
+def _select_transcription_provider(file_size_bytes: int) -> str:
+    """Determine which transcription provider to use based on config and file size."""
+    if TRANSCRIPTION_PROVIDER == "assemblyai":
+        if not assemblyai_available:
+            logger.warning("AssemblyAI requested but not configured — falling back to Deepgram.")
+            return "deepgram"
+        return "assemblyai"
+    elif TRANSCRIPTION_PROVIDER == "deepgram":
+        return "deepgram"
+    else:  # "auto"
+        if assemblyai_available and file_size_bytes > AUTO_ROUTE_THRESHOLD_BYTES:
+            return "assemblyai"
+        return "deepgram"
+
+
 @app.post("/api/transcribe")
 async def transcribe_audio(
     request: Request,
@@ -414,58 +631,29 @@ async def transcribe_audio(
                 status_code=413,
                 detail=f"File too large. Maximum allowed size is {MAX_UPLOAD_BYTES // (1024*1024)} MB.",
             )
+
+        provider = _select_transcription_provider(len(file_bytes))
         logger.info(
-            "Transcribe: file=%s  type=%s  size=%d bytes",
+            "Transcribe: file=%s  type=%s  size=%d bytes  provider=%s",
             file.filename,
             file.content_type,
             len(file_bytes),
+            provider,
         )
 
-        if not deepgram_client:
-            raise HTTPException(status_code=500, detail="Transcription service not configured.")
+        # Route to the selected provider
+        if provider == "assemblyai":
+            result = await _transcribe_with_assemblyai(file_bytes, file.filename or "audio.webm")
+        else:
+            result = await _transcribe_with_deepgram(file_bytes, file.filename or "audio.webm")
 
-        options = PrerecordedOptions(
-            model="nova-2",
-            smart_format=True,
-            diarize=True,
-            punctuate=True,
-        )
-
-        payload = {"buffer": file_bytes}
-        response = await asyncio.to_thread(
-            deepgram_client.listen.prerecorded.v("1").transcribe_file,
-            payload,
-            options,
-            timeout=httpx.Timeout(1800.0, connect=60.0),
-        )
-
-        response_dict = response.to_dict() if hasattr(response, "to_dict") else response
-        meta = response_dict.get("metadata", {})
-        duration_seconds = round(meta.get("duration", 0))
+        duration_seconds = result["duration_seconds"]
 
         if duration_seconds > MAX_RECORDING_DURATION_MINUTES * 60:
             raise HTTPException(
                 status_code=400,
                 detail=f"Audio exceeds {MAX_RECORDING_DURATION_MINUTES}-minute limit.",
             )
-
-        # Parse diarized output
-        channels = response_dict.get("results", {}).get("channels", [])
-        transcript_text = ""
-        paragraphs: list[dict] = []
-
-        if channels:
-            alts = channels[0].get("alternatives", [])
-            if alts:
-                paras_data = alts[0].get("paragraphs", {}).get("paragraphs", [])
-                if paras_data:
-                    for p in paras_data:
-                        speaker = p.get("speaker", 0)
-                        text = " ".join(s.get("text", "") for s in p.get("sentences", []))
-                        paragraphs.append({"speaker": f"Speaker {speaker}", "text": text})
-                else:
-                    transcript_text = alts[0].get("transcript", "")
-                    paragraphs.append({"speaker": "Speaker 0", "text": transcript_text})
 
         # Log usage
         if supabase:
@@ -479,11 +667,8 @@ async def transcribe_audio(
             except Exception as db_err:
                 logger.error("Failed to log usage: %s", db_err)
 
-        return {
-            "duration_seconds": duration_seconds,
-            "paragraphs": paragraphs or [{"speaker": "Speaker 0", "text": transcript_text}],
-            "raw_transcript": transcript_text or " ".join(p["text"] for p in paragraphs),
-        }
+        logger.info("Transcription complete via %s: %d seconds of audio", provider, duration_seconds)
+        return result
 
     except HTTPException:
         raise

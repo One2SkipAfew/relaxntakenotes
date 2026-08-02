@@ -15,12 +15,18 @@ import {
   AlertTriangle,
   Clock,
   Languages,
-  Cpu
+  Cpu,
+  FilePlus2
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import LiveStreamView from "./LiveStreamView";
 import AuthModal from "./AuthModal";
+import NotificationModal from "./NotificationModal";
 import { supabase } from "./supabaseClient";
+
+// File upload limits — must match backend MAX_UPLOAD_BYTES
+const MAX_FILE_SIZE_MB = 170;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 // Import visual assets
 import soundwaveAccent from "./assets/soundwave_accent.png";
@@ -154,6 +160,13 @@ export default function App() {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [dragOver, setDragOver] = useState(false);
 
+  // Notification modal state (replaces browser alerts)
+  const [notification, setNotification] = useState(null);
+  const showNotification = (type, title, message, actions) => {
+    setNotification({ type, title, message, actions });
+  };
+  const closeNotification = () => setNotification(null);
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStep, setProcessingStep] = useState("");
   const [transcript, setTranscript] = useState("");
@@ -219,7 +232,7 @@ export default function App() {
         isBase64 = true;
       } catch (err) {
         console.error("Error generating PDF:", err);
-        alert("Error generating PDF.");
+        showNotification("error", "PDF Generation Failed", "An error occurred while generating the PDF. Please try again.");
         return;
       }
     }
@@ -321,7 +334,7 @@ export default function App() {
       }, 1000);
 
     } catch (err) {
-      alert("Could not access microphone. Please check permissions.");
+      showNotification("warning", "Microphone Access Denied", "Could not access your microphone. Please check your browser permissions and try again.");
       console.error(err);
     }
   };
@@ -351,17 +364,29 @@ export default function App() {
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      if (file.type.startsWith("audio/")) {
-        setAudioFile(file);
-      } else {
-        alert("Please select an audio file (mp3, wav, m4a, webm, etc.)");
+      if (!file.type.startsWith("audio/")) {
+        showNotification("warning", "Invalid File Type", "Please select an audio file (mp3, wav, m4a, webm, etc.).");
+        return;
       }
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+        showNotification("error", "File Too Large", `Your file is ${sizeMB} MB. The maximum allowed size is ${MAX_FILE_SIZE_MB} MB. Please compress or trim the audio and try again.`);
+        return;
+      }
+      setAudioFile(file);
     }
   };
 
   const handleFileSelect = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      setAudioFile(e.target.files[0]);
+      const file = e.target.files[0];
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+        showNotification("error", "File Too Large", `Your file is ${sizeMB} MB. The maximum allowed size is ${MAX_FILE_SIZE_MB} MB. Please compress or trim the audio and try again.`);
+        e.target.value = "";
+        return;
+      }
+      setAudioFile(file);
     }
   };
 
@@ -437,7 +462,7 @@ export default function App() {
       fetchStatus();
 
     } catch (err) {
-      alert(`Error transcribing audio: ${err.message}`);
+      showNotification("error", "Transcription Failed", `Error transcribing audio: ${err.message}`);
       setIsProcessing(false);
     }
   };
@@ -527,9 +552,9 @@ export default function App() {
       }
     } catch (err) {
       if (err.name === "AbortError") {
-        alert("AI request timed out. Please try again.");
+        showNotification("warning", "Request Timed Out", "The AI request took too long and was cancelled. Please try again.");
       } else {
-        alert(`AI Error: ${err.message}`);
+        showNotification("error", "AI Processing Error", `AI Error: ${err.message}`);
       }
     } finally {
       clearTimeout(timeout);
@@ -573,9 +598,9 @@ export default function App() {
       setTtsAudioUrl(url);
     } catch (err) {
       if (err.name === "AbortError") {
-        alert("TTS request timed out. Please try again.");
+        showNotification("warning", "Request Timed Out", "The text-to-speech request timed out. Please try again.");
       } else {
-        alert(`TTS error: ${err.message}`);
+        showNotification("error", "Text-to-Speech Error", `TTS error: ${err.message}`);
       }
     } finally {
       clearTimeout(timeout);
@@ -645,7 +670,8 @@ export default function App() {
   }
 
   return (
-    <div className="fade-in" style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+    <>
+      <div className="fade-in" style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       <div style={{ flexGrow: 1 }}>
 
         {/* Section 1: Landing & Hero Section (Uses primary background) */}
@@ -662,7 +688,7 @@ export default function App() {
               <>
                 <button 
                   className="btn btn-secondary"
-                  onClick={() => alert("Resources feature coming soon.")}
+                  onClick={() => showNotification("info", "Coming Soon", "The Resources feature is currently under development and will be available soon.")}
                   style={{ padding: "6px 12px", fontSize: "0.85rem" }}
                 >
                   Resources
@@ -702,12 +728,7 @@ export default function App() {
           </nav>
         </header>
 
-        {/* Auth Modal */}
-        <AuthModal 
-          isOpen={isAuthModalOpen} 
-          onClose={() => setIsAuthModalOpen(false)} 
-          defaultTab={authModalTab}
-        />
+        {/* Auth Modal moved to root */}
 
             {/* Hero Copy Content */}
             <div style={{ textAlign: "center", maxWidth: "900px", margin: "0 auto" }}>
@@ -1138,7 +1159,14 @@ export default function App() {
                 {/* Left Panel: Editable Transcript */}
                 <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: "550px" }}>
                   <div className="flex-between" style={{ marginBottom: "12px" }}>
-                    <h2 style={{ fontSize: "0.85rem", color: "var(--text-primary)" }}>Diarized Transcript</h2>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <h2 style={{ fontSize: "0.85rem", color: "var(--text-primary)", margin: 0 }}>Diarized Transcript</h2>
+                      {audioFile?.name && (
+                        <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", background: "rgba(255, 255, 255, 0.05)", padding: "2px 8px", borderRadius: "12px", border: "1px solid var(--border-color)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "250px" }}>
+                          {audioFile.name}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-muted-small">Edit text blocks freely below</span>
                   </div>
 
@@ -1209,6 +1237,99 @@ export default function App() {
                         style={{ padding: "6px 12px", fontSize: "0.75rem", display: "inline-flex", alignItems: "center", gap: "6px", color: "inherit" }}
                       >
                         <Download size={12} /> Adobe PDF
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Session Actions — restart or replace audio */}
+                  <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "16px", marginTop: "16px" }}>
+                    <label style={{ display: "block", marginBottom: "8px", fontSize: "0.7rem", fontFamily: "var(--font-heading)", color: "var(--text-secondary)" }}>SESSION ACTIONS</label>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      <button
+                        className="btn"
+                        onClick={() => {
+                          showNotification("warning", "Start New Session?", "This will clear the current transcript, AI results, and audio file. Are you sure?", [
+                            { label: "Cancel", variant: "secondary", onClick: () => setNotification(null) },
+                            {
+                              label: "Start New Session",
+                              variant: "primary",
+                              onClick: () => {
+                                setTranscript("");
+                                setAudioFile(null);
+                                setDocumentTitle("");
+                                setSpeakerMap({});
+                                setSpeakerInputs({});
+                                setAiSummary("");
+                                setAiInsights("");
+                                setAiTranslation("");
+                                setTtsAudioUrl(null);
+                                setIsProcessing(false);
+                                setRecordingDuration(0);
+                                setNotification(null);
+                                window.scrollTo({ top: 0, behavior: "smooth" });
+                              }
+                            }
+                          ]);
+                        }}
+                        style={{
+                          padding: "8px 16px",
+                          fontSize: "0.8rem",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          background: "rgba(239, 68, 68, 0.1)",
+                          border: "1px solid rgba(239, 68, 68, 0.3)",
+                          color: "#EF4444",
+                          borderRadius: "var(--radius-md)",
+                          cursor: "pointer",
+                          transition: "all 0.2s",
+                          fontWeight: "600"
+                        }}
+                      >
+                        <RotateCcw size={14} /> New Session
+                      </button>
+                      <button
+                        className="btn"
+                        onClick={() => {
+                          showNotification("info", "Replace Audio File?", "This will clear the current transcript and AI results, but keep your metadata. You can then upload a new audio file.", [
+                            { label: "Cancel", variant: "secondary", onClick: () => setNotification(null) },
+                            {
+                              label: "Replace File",
+                              variant: "primary",
+                              onClick: () => {
+                                setTranscript("");
+                                setAudioFile(null);
+                                setSpeakerMap({});
+                                setSpeakerInputs({});
+                                setAiSummary("");
+                                setAiInsights("");
+                                setAiTranslation("");
+                                setTtsAudioUrl(null);
+                                setIsProcessing(false);
+                                setNotification(null);
+                                // Scroll to the audio upload area
+                                const el = document.getElementById("workspace");
+                                if (el) el.scrollIntoView({ behavior: "smooth" });
+                              }
+                            }
+                          ]);
+                        }}
+                        style={{
+                          padding: "8px 16px",
+                          fontSize: "0.8rem",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          background: "rgba(0, 240, 255, 0.08)",
+                          border: "1px solid rgba(0, 240, 255, 0.25)",
+                          color: "var(--accent-cyan)",
+                          borderRadius: "var(--radius-md)",
+                          cursor: "pointer",
+                          transition: "all 0.2s",
+                          fontWeight: "600"
+                        }}
+                      >
+                        <FilePlus2 size={14} /> Replace Audio File
                       </button>
                     </div>
                   </div>
@@ -1430,6 +1551,25 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Notification Modal — replaces all browser alert() calls */}
+      <NotificationModal
+        isOpen={!!notification}
+        onClose={closeNotification}
+        type={notification?.type}
+        title={notification?.title}
+        message={notification?.message}
+        actions={notification?.actions}
+      />
+
     </div>
+
+    {/* Auth Modal rendered at root level */}
+    <AuthModal
+      isOpen={isAuthModalOpen}
+      onClose={() => setIsAuthModalOpen(false)}
+      defaultTab={authModalTab}
+    />
+    </>
   );
 }

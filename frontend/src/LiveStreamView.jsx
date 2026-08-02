@@ -21,6 +21,7 @@ import {
   Save,
 } from "lucide-react";
 import "./LiveStreamView.css";
+import NotificationModal from "./NotificationModal";
 import { supabase } from "./supabaseClient";
 import { jsPDF } from "jspdf";
 
@@ -58,7 +59,7 @@ const VERDICT_CONFIG = {
   UNVERIFIABLE: { icon: HelpCircle, color: "#6b7280", bg: "rgba(107, 114, 128, 0.1)", label: "UNVERIFIABLE" },
 };
 
-const MAX_DURATION_SECONDS = 5400; // 1.5 hours
+const MAX_DURATION_SECONDS = 7200; // 2 hours
 const WARN_BEFORE_SECONDS = 300;   // Warn 5 minutes before limit
 
 export default function LiveStreamView({ onBack }) {
@@ -92,6 +93,13 @@ export default function LiveStreamView({ onBack }) {
   const [isGeneratingPackage, setIsGeneratingPackage] = useState(false);
   const [isSavingSession, setIsSavingSession] = useState(false);
   const [sessionSaved, setSessionSaved] = useState(false);
+
+  // Notification modal state (replaces browser alerts)
+  const [notification, setNotification] = useState(null);
+  const showNotification = (type, title, message, actions) => {
+    setNotification({ type, title, message, actions });
+  };
+  const closeNotification = () => setNotification(null);
   const [currentUser, setCurrentUser] = useState(null);
 
   // Refs
@@ -177,14 +185,14 @@ export default function LiveStreamView({ onBack }) {
             const next = prev + 1;
             // Warn 5 minutes before limit
             if (next === MAX_DURATION_SECONDS - WARN_BEFORE_SECONDS) {
-              alert(`⚠️ Recording will automatically stop in ${WARN_BEFORE_SECONDS / 60} minutes (1.5 hour limit).`);
+              showNotification("warning", "Recording Limit Approaching", `Recording will automatically stop in ${WARN_BEFORE_SECONDS / 60} minutes (2 hour limit).`);
             }
             // Auto-stop at limit
             if (next >= MAX_DURATION_SECONDS) {
               // Use setTimeout to avoid calling stopStreaming inside setDuration
               setTimeout(() => {
                 if (wsRef.current) {
-                  alert("⏹️ Maximum recording duration of 1.5 hours reached. Recording has been stopped.");
+                  showNotification("info", "Recording Stopped", "Maximum recording duration of 2 hours reached. Your recording has been automatically stopped.");
                   // Trigger stop
                   document.querySelector(".ls-btn-stop")?.click();
                 }
@@ -258,7 +266,7 @@ export default function LiveStreamView({ onBack }) {
     } catch (err) {
       console.error("Failed to start streaming:", err);
       setConnectionStatus("error");
-      alert("Could not access microphone. Please check permissions.");
+      showNotification("warning", "Microphone Access Denied", "Could not access your microphone. Please check your browser permissions and try again.");
     }
   };
 
@@ -377,7 +385,7 @@ export default function LiveStreamView({ onBack }) {
   const generateAINotes = async (isAuto = false) => {
     const transcript = getFullTranscript();
     if (!transcript.trim() || transcript.split(/\s+/).length < 20) {
-      if (!isAuto) alert("Not enough transcript content yet. Keep recording.");
+      if (!isAuto) showNotification("info", "Not Enough Content", "There isn't enough transcript content yet to generate notes. Keep recording.");
       return;
     }
 
@@ -397,7 +405,7 @@ export default function LiveStreamView({ onBack }) {
       setAiNotes(data.result);
     } catch (err) {
       console.error("AI notes error:", err);
-      if (!isAuto) alert(`Error generating notes: ${err.message}`);
+      if (!isAuto) showNotification("error", "Notes Generation Failed", `Error generating notes: ${err.message}`);
     } finally {
       setIsGeneratingNotes(false);
     }
@@ -407,7 +415,7 @@ export default function LiveStreamView({ onBack }) {
   const runFactCheck = async () => {
     const transcript = getFullTranscript();
     if (!transcript.trim()) {
-      alert("No transcript to fact-check yet.");
+      showNotification("info", "No Transcript Available", "There's no transcript content to fact-check yet. Start recording first.");
       return;
     }
 
@@ -430,7 +438,7 @@ export default function LiveStreamView({ onBack }) {
       setFactCheckResults((prev) => [...prev, ...(data.results || [])]);
     } catch (err) {
       console.error("Fact-check error:", err);
-      alert(`Fact-check error: ${err.message}`);
+      showNotification("error", "Fact-Check Failed", `Fact-check error: ${err.message}`);
     } finally {
       setIsFactChecking(false);
     }
@@ -443,7 +451,7 @@ export default function LiveStreamView({ onBack }) {
 
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
-      alert("You must be logged in to upload and save organization documents.");
+      showNotification("warning", "Authentication Required", "You must be logged in to upload and save organization documents.");
       return;
     }
 
@@ -476,7 +484,7 @@ export default function LiveStreamView({ onBack }) {
       setUseOrgDocs(true);
     } catch (err) {
       console.error(err);
-      alert(`Upload error: ${err.message}`);
+      showNotification("error", "Upload Failed", `Upload error: ${err.message}`);
     }
   };
 
@@ -484,7 +492,7 @@ export default function LiveStreamView({ onBack }) {
   const generateMeetingPackage = async () => {
     const transcript = getFullTranscript();
     if (!transcript.trim()) {
-      alert("No transcript to generate package from.");
+      showNotification("info", "No Transcript Available", "There's no transcript content to generate a package from yet.");
       return;
     }
 
@@ -507,7 +515,7 @@ export default function LiveStreamView({ onBack }) {
       const data = await response.json();
       setMeetingPackage(data.result);
     } catch (err) {
-      alert(`Package error: ${err.message}`);
+      showNotification("error", "Package Generation Failed", `Package error: ${err.message}`);
     } finally {
       setIsGeneratingPackage(false);
     }
@@ -517,12 +525,12 @@ export default function LiveStreamView({ onBack }) {
   const saveSession = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
-      alert("You must be logged in to save the session.");
+      showNotification("warning", "Authentication Required", "You must be logged in to save the session.");
       return;
     }
 
     if (audioChunksRef.current.length === 0 && transcriptEntries.length === 0) {
-      alert("No data to save.");
+      showNotification("info", "Nothing to Save", "There is no recording data or transcript to save yet.");
       return;
     }
 
@@ -578,10 +586,10 @@ export default function LiveStreamView({ onBack }) {
       }
 
       setSessionSaved(true);
-      alert("Session saved successfully!");
+      showNotification("success", "Session Saved", "Your livestream session has been saved successfully!");
     } catch (err) {
       console.error(err);
-      alert(`Save error: ${err.message}`);
+      showNotification("error", "Save Failed", `Save error: ${err.message}`);
     } finally {
       setIsSavingSession(false);
     }
@@ -637,7 +645,7 @@ export default function LiveStreamView({ onBack }) {
         doc.save(`${filename}.pdf`);
         return;
       } catch (err) {
-        alert("Error generating PDF: " + err.message);
+        showNotification("error", "PDF Generation Failed", "Error generating PDF: " + err.message);
         return;
       }
     }
@@ -1026,6 +1034,16 @@ export default function LiveStreamView({ onBack }) {
           </div>
         </div>
       )}
+
+      {/* Notification Modal — replaces all browser alert() calls */}
+      <NotificationModal
+        isOpen={!!notification}
+        onClose={closeNotification}
+        type={notification?.type}
+        title={notification?.title}
+        message={notification?.message}
+        actions={notification?.actions}
+      />
     </div>
   );
 }

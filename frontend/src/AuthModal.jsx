@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
 import { X, Mail, Lock, User, Building, MapPin, AlertCircle } from 'lucide-react';
 import './AuthModal.css';

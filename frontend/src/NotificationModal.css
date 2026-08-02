@@ -1,0 +1,153 @@
+/* ============================================================
+   Notification Modal Styles
+   Matches the existing dark glassmorphism design system.
+   ============================================================ */
+
+.notif-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: notifOverlayIn 0.2s ease-out;
+}
+
+@keyframes notifOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.notif-modal {
+  background: rgba(10, 15, 30, 0.96);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 440px;
+  padding: 32px;
+  position: relative;
+  text-align: center;
+  font-family: var(--font-body, 'Inter', sans-serif);
+  animation: notifSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes notifSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Close button */
+.notif-close-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notif-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* Icon container */
+.notif-icon-container {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+
+/* Title */
+.notif-title {
+  font-family: var(--font-heading, 'Outfit', sans-serif);
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 10px;
+  letter-spacing: -0.01em;
+}
+
+/* Message */
+.notif-message {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  line-height: 1.6;
+  margin: 0 0 24px;
+  word-break: break-word;
+}
+
+/* Action buttons — right-aligned row */
+.notif-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.notif-btn {
+  padding: 10px 22px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-heading, 'Outfit', sans-serif);
+  letter-spacing: 0.01em;
+}
+
+.notif-btn-primary {
+  color: #0a0f24;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.notif-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  filter: brightness(1.1);
+}
+
+.notif-btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.notif-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  transform: translateY(-1px);
+}
+
+@media (max-width: 480px) {
+  .notif-modal {
+    padding: 24px 20px;
+    max-width: 95%;
+  }
+  
+  .notif-actions {
+    flex-direction: column;
+  }
+  
+  .notif-btn {
+    width: 100%;
+  }
+}
