@@ -22,6 +22,7 @@ import { jsPDF } from "jspdf";
 import LiveStreamView from "./LiveStreamView";
 import AuthModal from "./AuthModal";
 import NotificationModal from "./NotificationModal";
+import ProcessingModal from "./ProcessingModal";
 import { supabase } from "./supabaseClient";
 
 // File upload limits — must match backend MAX_UPLOAD_BYTES
@@ -169,6 +170,23 @@ export default function App() {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStep, setProcessingStep] = useState("");
+  const abortControllerRef = useRef(null);
+
+  const cancelProcessing = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setIsProcessing(false);
+    setProcessingStep("");
+  }, []);
+
+  const restartProcessing = useCallback(() => {
+    cancelProcessing();
+    // Use setTimeout to allow state to settle before restarting
+    setTimeout(() => {
+      handleTranscribe();
+    }, 100);
+  }, [cancelProcessing]);
   const [transcript, setTranscript] = useState("");
   const [documentTitle, setDocumentTitle] = useState("");
   const [speakerMap, setSpeakerMap] = useState({});
@@ -185,8 +203,8 @@ export default function App() {
   const [isTtsSynthesizing, setIsTtsSynthesizing] = useState(false);
   const [ttsAudioUrl, setTtsAudioUrl] = useState(null);
 
-  const downloadFile = (format) => {
-    if (!transcript) return;
+  const downloadFile = (format, contentSource = transcript, filePrefix = "") => {
+    if (!contentSource) return;
 
     let content = "";
     let mimeType = "";
@@ -194,15 +212,15 @@ export default function App() {
     let isBase64 = false;
 
     if (format === "txt") {
-      content = transcript;
+      content = contentSource;
       mimeType = "text/plain;charset=utf-8";
       extension = "txt";
     } else if (format === "doc") {
       content = `\ufeff<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-<head><title>${documentTitle}</title><style>body { font-family: Arial, sans-serif; line-height: 1.6; }</style></head>
+<head><title>${filePrefix ? filePrefix + " - " : ""}${documentTitle}</title><style>body { font-family: Arial, sans-serif; line-height: 1.6; }</style></head>
 <body>
-  <h2>${documentTitle}</h2>
-  <p style="white-space: pre-wrap;">${transcript.replace(/\\n/g, '<br/>').replace(/\n/g, '<br/>')}</p>
+  <h2>${filePrefix ? filePrefix + " - " : ""}${documentTitle}</h2>
+  <p style="white-space: pre-wrap;">${contentSource.replace(/\\n/g, '<br/>').replace(/\n/g, '<br/>')}</p>
 </body>
 </html>`;
       mimeType = "application/msword;charset=utf-8";
@@ -212,10 +230,10 @@ export default function App() {
         const doc = new jsPDF();
         doc.setFont("helvetica", "normal");
         doc.setFontSize(16);
-        doc.text(documentTitle || "Relax n Take Notes Transcript", 14, 20);
+        doc.text(`${filePrefix ? filePrefix + " - " : ""}${documentTitle || "Relax n Take Notes Transcript"}`, 14, 20);
 
         doc.setFontSize(10);
-        const splitText = doc.splitTextToSize(transcript, 180);
+        const splitText = doc.splitTextToSize(contentSource, 180);
 
         let y = 30;
         for (let i = 0; i < splitText.length; i++) {
@@ -237,7 +255,7 @@ export default function App() {
       }
     }
 
-    const filename = getSafeFilename(extension);
+    const filename = getSafeFilename(extension, filePrefix);
 
     const form = document.createElement("form");
     form.method = "POST";
@@ -399,6 +417,10 @@ export default function App() {
     setSpeakerMap({});
     setSpeakerInputs({});
 
+    // Setup abort controller
+    abortControllerRef.current = new AbortController();
+    const { signal } = abortControllerRef.current;
+
     let finalTitle;
     if (recordingType === "Song") {
       finalTitle = metadata.songTitle || metadata.songArtist ? `${metadata.songArtist} - ${metadata.songTitle}` : "Untitled Song";
@@ -419,7 +441,8 @@ export default function App() {
         headers: {
           "X-User-UUID": userUuid
         },
-        body: formData
+        body: formData,
+        signal
       });
 
       if (!response.ok) {
@@ -462,7 +485,11 @@ export default function App() {
       fetchStatus();
 
     } catch (err) {
-      showNotification("error", "Transcription Failed", `Error transcribing audio: ${err.message}`);
+      if (err.name === 'AbortError') {
+        console.log("Transcription was cancelled");
+      } else {
+        showNotification("error", "Transcription Failed", `Error transcribing audio: ${err.message}`);
+      }
       setIsProcessing(false);
     }
   };
@@ -630,15 +657,18 @@ export default function App() {
     return html;
   };
 
-  const getSafeFilename = (extension) => {
-    const baseTitle = documentTitle.trim() || "transcript";
+  const getSafeFilename = (extension, prefix = "") => {
+    let baseTitle = documentTitle.trim() || "transcript";
+    if (prefix) {
+      baseTitle = `${prefix} - ${baseTitle}`;
+    }
     const safeTitle = baseTitle
       .toLowerCase()
       // eslint-disable-next-line no-useless-escape
       .replace(/[\/\\:*?"<>|]/g, "") // Remove characters that are invalid in Windows/macOS/Linux filenames
       .replace(/\s+/g, "_")          // Replace spaces with underscores
       .replace(/^_+|_+$/g, "");      // Strip leading/trailing underscores
-    return `${safeTitle}_transcript.${extension}`;
+    return `${safeTitle}.${extension}`;
   };
 
 
@@ -1381,7 +1411,14 @@ export default function App() {
                         </button>
                         <div className="ai-output-box">
                           {aiSummary ? (
-                            <div dangerouslySetInnerHTML={{ __html: renderMarkdown(aiSummary) }} />
+                            <>
+                              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", borderBottom: "1px solid var(--border-color)", paddingBottom: "8px", marginBottom: "12px" }}>
+                                <button className="btn btn-secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => downloadFile("txt", aiSummary, "Summary")}>.TXT</button>
+                                <button className="btn btn-secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => downloadFile("doc", aiSummary, "Summary")}>.DOC</button>
+                                <button className="btn btn-secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => downloadFile("pdf", aiSummary, "Summary")}>.PDF</button>
+                              </div>
+                              <div dangerouslySetInnerHTML={{ __html: renderMarkdown(aiSummary) }} />
+                            </>
                           ) : (
                             <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: "0.75rem" }}>No summary generated yet. Click the button above.</span>
                           )}
@@ -1403,7 +1440,14 @@ export default function App() {
                         </button>
                         <div className="ai-output-box">
                           {aiInsights ? (
-                            <div dangerouslySetInnerHTML={{ __html: renderMarkdown(aiInsights) }} />
+                            <>
+                              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", borderBottom: "1px solid var(--border-color)", paddingBottom: "8px", marginBottom: "12px" }}>
+                                <button className="btn btn-secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => downloadFile("txt", aiInsights, "Insights")}>.TXT</button>
+                                <button className="btn btn-secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => downloadFile("doc", aiInsights, "Insights")}>.DOC</button>
+                                <button className="btn btn-secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => downloadFile("pdf", aiInsights, "Insights")}>.PDF</button>
+                              </div>
+                              <div dangerouslySetInnerHTML={{ __html: renderMarkdown(aiInsights) }} />
+                            </>
                           ) : (
                             <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: "0.75rem" }}>No action items parsed yet. Click the button above.</span>
                           )}
@@ -1445,7 +1489,14 @@ export default function App() {
                         </button>
                         <div className="ai-output-box">
                           {aiTranslation ? (
-                            <div style={{ whiteSpace: "pre-wrap", fontSize: "0.75rem" }}>{aiTranslation}</div>
+                            <>
+                              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", borderBottom: "1px solid var(--border-color)", paddingBottom: "8px", marginBottom: "12px" }}>
+                                <button className="btn btn-secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => downloadFile("txt", aiTranslation, `Translation_${targetLanguage}`)}>.TXT</button>
+                                <button className="btn btn-secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => downloadFile("doc", aiTranslation, `Translation_${targetLanguage}`)}>.DOC</button>
+                                <button className="btn btn-secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => downloadFile("pdf", aiTranslation, `Translation_${targetLanguage}`)}>.PDF</button>
+                              </div>
+                              <div style={{ whiteSpace: "pre-wrap", fontSize: "0.75rem" }}>{aiTranslation}</div>
+                            </>
                           ) : (
                             <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: "0.75rem" }}>No translation performed yet. Click the button above.</span>
                           )}
@@ -1489,7 +1540,17 @@ export default function App() {
 
                         {ttsAudioUrl && (
                           <div className="fade-in" style={{ background: "rgba(4, 6, 14, 0.6)", border: "1px solid var(--border-color)", padding: "12px", borderRadius: "var(--radius-md)", marginTop: "12px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-                            <span style={{ fontSize: "0.65rem", color: "var(--accent-cyan)", fontWeight: "700", marginBottom: "8px", fontFamily: "var(--font-heading)" }}>SYNTHESIS ACTIVE</span>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: "8px" }}>
+                              <span style={{ fontSize: "0.65rem", color: "var(--accent-cyan)", fontWeight: "700", fontFamily: "var(--font-heading)" }}>SYNTHESIS ACTIVE</span>
+                              <a 
+                                href={ttsAudioUrl} 
+                                download={getSafeFilename("mp3", "Voice_TTS")} 
+                                className="btn btn-secondary" 
+                                style={{ textDecoration: "none", padding: "4px 8px", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "4px" }}
+                              >
+                                <Download size={12} /> Download Audio
+                              </a>
+                            </div>
                             <audio
                               ref={audioPlayerRef}
                               src={ttsAudioUrl}
@@ -1569,6 +1630,12 @@ export default function App() {
       isOpen={isAuthModalOpen}
       onClose={() => setIsAuthModalOpen(false)}
       defaultTab={authModalTab}
+    />
+    <ProcessingModal
+      isOpen={isProcessing}
+      stepMessage={processingStep}
+      onCancel={cancelProcessing}
+      onRestart={restartProcessing}
     />
     </>
   );
