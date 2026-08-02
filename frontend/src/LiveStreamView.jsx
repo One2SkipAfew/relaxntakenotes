@@ -19,9 +19,13 @@ import {
   Package,
   RefreshCw,
   Save,
+  Cpu,
+  Stethoscope,
+  X,
 } from "lucide-react";
 import "./LiveStreamView.css";
 import NotificationModal from "./NotificationModal";
+import SubjectMatterDropdown from "./SubjectMatterDropdown";
 import { supabase } from "./supabaseClient";
 import { jsPDF } from "jspdf";
 
@@ -93,6 +97,10 @@ export default function LiveStreamView({ onBack }) {
   const [isGeneratingPackage, setIsGeneratingPackage] = useState(false);
   const [isSavingSession, setIsSavingSession] = useState(false);
   const [sessionSaved, setSessionSaved] = useState(false);
+
+  // Subject Matter Specialty
+  const [subjectMatter, setSubjectMatter] = useState("General");
+  const [medicalDisclaimerDismissed, setMedicalDisclaimerDismissed] = useState(false);
 
   // Notification modal state (replaces browser alerts)
   const [notification, setNotification] = useState(null);
@@ -398,7 +406,7 @@ export default function LiveStreamView({ onBack }) {
       const response = await fetch(`${API_BASE_URL}/api/livestream/ai-notes`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ transcript }),
+        body: JSON.stringify({ transcript, subject_matter: subjectMatter }),
       });
       if (!response.ok) throw new Error("AI notes generation failed");
       const data = await response.json();
@@ -819,6 +827,21 @@ export default function LiveStreamView({ onBack }) {
             <div className="ls-panel-title">
               <Sparkles size={16} />
               <span>AI Notes</span>
+              {/* Persistent non-intrusive indicator for active subject matter */}
+              {subjectMatter !== "General" && medicalDisclaimerDismissed && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '3px',
+                  padding: '1px 6px', marginLeft: '6px',
+                  background: subjectMatter === 'Medical' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(0, 240, 255, 0.08)',
+                  border: `1px solid ${subjectMatter === 'Medical' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(0, 240, 255, 0.2)'}`,
+                  borderRadius: '8px', fontSize: '0.55rem',
+                  color: subjectMatter === 'Medical' ? 'rgba(239, 68, 68, 0.7)' : 'var(--accent-cyan)',
+                  fontFamily: 'var(--font-heading)', fontWeight: 600
+                }}>
+                  {subjectMatter === 'Medical' && <Stethoscope size={8} />}
+                  {subjectMatter}
+                </span>
+              )}
             </div>
             <button
               className="ls-btn ls-btn-sm"
@@ -828,6 +851,51 @@ export default function LiveStreamView({ onBack }) {
               <RefreshCw size={12} className={isGeneratingNotes ? "spinning" : ""} />
               {isGeneratingNotes ? "Generating..." : "Generate"}
             </button>
+          </div>
+
+          {/* Subject Matter Selector */}
+          <div style={{ padding: '0 12px', marginBottom: '8px' }}>
+            <div className="form-group" style={{ marginBottom: '6px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.6rem', fontFamily: 'var(--font-heading)', fontWeight: 700, color: 'var(--accent-cyan)', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                <Cpu size={10} />
+                AI Subject Specialty
+              </label>
+              <SubjectMatterDropdown 
+                value={subjectMatter}
+                onChange={(val) => {
+                  setSubjectMatter(val);
+                  setMedicalDisclaimerDismissed(false);
+                }}
+              />
+            </div>
+
+            {/* Medical Disclaimer — dismissible banner */}
+            {subjectMatter === "Medical" && !medicalDisclaimerDismissed && (
+              <div style={{
+                display: 'flex', alignItems: 'flex-start', gap: '8px',
+                padding: '8px 10px', marginBottom: '4px',
+                background: 'rgba(239, 68, 68, 0.04)',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+                borderRadius: 'var(--radius-sm)',
+              }}>
+                <Stethoscope size={12} style={{ color: 'var(--error)', flexShrink: 0, marginTop: '2px' }} />
+                <div style={{ flex: 1 }}>
+                  <strong style={{ color: 'var(--error)', fontSize: '0.6rem', fontFamily: 'var(--font-heading)' }}>
+                    MEDICAL AI DISCLAIMER
+                  </strong>
+                  <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.3' }}>
+                    AI-generated medical notes are for informational purposes only and do not constitute medical advice. Always consult a qualified healthcare professional.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setMedicalDisclaimerDismissed(true)}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', flexShrink: 0 }}
+                  title="Dismiss disclaimer"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="ls-notes-body">

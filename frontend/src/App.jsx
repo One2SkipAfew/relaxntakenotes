@@ -16,10 +16,13 @@ import {
   Clock,
   Languages,
   Cpu,
-  FilePlus2
+  FilePlus2,
+  Stethoscope,
+  X
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import LiveStreamView from "./LiveStreamView";
+import SubjectMatterDropdown from "./SubjectMatterDropdown";
 import AuthModal from "./AuthModal";
 import NotificationModal from "./NotificationModal";
 import ProcessingModal from "./ProcessingModal";
@@ -198,6 +201,8 @@ export default function App() {
   const [aiTranslation, setAiTranslation] = useState("");
   const [targetLanguage, setTargetLanguage] = useState("French");
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [subjectMatter, setSubjectMatter] = useState("General");
+  const [medicalDisclaimerDismissed, setMedicalDisclaimerDismissed] = useState(false);
 
   const [ttsVoice, setTtsVoice] = useState("en-ZA-LeahNeural");
   const [isTtsSynthesizing, setIsTtsSynthesizing] = useState(false);
@@ -560,7 +565,8 @@ export default function App() {
           transcript: transcript,
           feature_type: type,
           metadata: selectedMeta,
-          target_language: targetLanguage
+          target_language: targetLanguage,
+          subject_matter: subjectMatter
         })
       });
 
@@ -1367,6 +1373,61 @@ export default function App() {
 
                 {/* Right Panel: AI Features & TTS */}
                 <div className="card" style={{ display: "flex", flexDirection: "column" }}>
+                  {/* Subject Matter Specialty Selector */}
+                  <div className="form-group" style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', fontFamily: 'var(--font-heading)', fontWeight: 700, color: 'var(--accent-cyan)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                      <Cpu size={12} />
+                      AI Subject Specialty
+                    </label>
+                    <SubjectMatterDropdown 
+                      value={subjectMatter}
+                      onChange={(val) => {
+                        setSubjectMatter(val);
+                        setMedicalDisclaimerDismissed(false);
+                      }}
+                    />
+                  </div>
+
+                  {/* Medical Disclaimer — dismissible banner */}
+                  {subjectMatter === "Medical" && !medicalDisclaimerDismissed && (
+                    <div className="notification-card subject-matter-disclaimer" style={{ marginBottom: '12px', borderColor: 'rgba(239, 68, 68, 0.3)', position: 'relative' }}>
+                      <div className="notification-badge-icon" style={{ color: 'var(--error)' }}>
+                        <Stethoscope size={14} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <strong style={{ color: 'var(--error)', fontSize: '0.65rem', fontFamily: 'var(--font-heading)' }}>
+                          MEDICAL AI DISCLAIMER
+                        </strong>
+                        <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                          AI-generated medical summaries are for informational purposes only and do not constitute medical advice, diagnosis, or treatment. Always consult a qualified healthcare professional for clinical decisions.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setMedicalDisclaimerDismissed(true)}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', alignSelf: 'flex-start', flexShrink: 0 }}
+                        title="Dismiss disclaimer"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Persistent non-intrusive indicator when Medical mode is active and disclaimer dismissed */}
+                  {subjectMatter !== "General" && (subjectMatter !== "Medical" || medicalDisclaimerDismissed) && (
+                    <div className="subject-matter-indicator" style={{
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      padding: '4px 10px', marginBottom: '10px',
+                      background: subjectMatter === 'Medical' ? 'rgba(239, 68, 68, 0.06)' : 'rgba(0, 240, 255, 0.06)',
+                      border: `1px solid ${subjectMatter === 'Medical' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(0, 240, 255, 0.15)'}`,
+                      borderRadius: 'var(--radius-sm)', fontSize: '0.65rem',
+                      color: subjectMatter === 'Medical' ? 'rgba(239, 68, 68, 0.7)' : 'var(--accent-cyan)',
+                      fontFamily: 'var(--font-heading)', fontWeight: 600
+                    }}>
+                      {subjectMatter === 'Medical' && <Stethoscope size={10} />}
+                      {subjectMatter} Mode Active
+                    </div>
+                  )}
+
                   {/* Tab Navigation */}
                   <div className="tabs">
                     <button

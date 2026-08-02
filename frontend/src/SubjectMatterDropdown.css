@@ -1,0 +1,104 @@
+.smd-container {
+  position: relative;
+  width: 100%;
+  font-family: var(--font-body);
+}
+
+.smd-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.smd-trigger:hover, .smd-trigger:focus {
+  border-color: var(--accent-cyan);
+  background-color: rgba(0, 240, 255, 0.05);
+}
+
+.smd-trigger.open {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px rgba(0, 240, 255, 0.2);
+}
+
+.smd-selected-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.smd-icon {
+  color: var(--text-secondary);
+  transition: color 0.2s;
+}
+
+.smd-chevron {
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+
+.smd-trigger.open .smd-chevron {
+  transform: rotate(180deg);
+}
+
+.smd-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.smd-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.smd-option:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.smd-option-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.smd-option.selected {
+  background-color: rgba(0, 240, 255, 0.1);
+  color: var(--accent-cyan);
+}
+
+.smd-option.selected .smd-icon {
+  color: var(--accent-cyan);
+}
+
+.smd-check {
+  color: var(--accent-cyan);
+}
