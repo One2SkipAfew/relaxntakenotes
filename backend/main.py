@@ -91,6 +91,11 @@ TRANSCRIPTION_PROVIDER = os.getenv("TRANSCRIPTION_PROVIDER", "auto").lower()  # 
 AUTO_ROUTE_THRESHOLD_MB = int(os.getenv("AUTO_ROUTE_THRESHOLD_MB", "50"))
 AUTO_ROUTE_THRESHOLD_BYTES = AUTO_ROUTE_THRESHOLD_MB * 1024 * 1024
 
+# Audio chunking — Deepgram processes chunks in parallel; AssemblyAI is the fallback for very large files
+AUDIO_CHUNK_MINUTES = int(os.getenv("AUDIO_CHUNK_MINUTES", "10"))            # each chunk length
+ASSEMBLYAI_FALLBACK_MB = int(os.getenv("ASSEMBLYAI_FALLBACK_MB", "100"))     # above this → AssemblyAI directly
+ASSEMBLYAI_FALLBACK_BYTES = ASSEMBLYAI_FALLBACK_MB * 1024 * 1024
+
 # Subject Matter Specialization — model + prompt overrides per domain
 # Each domain can optionally specify a dedicated AI model and domain-specific prompt prefixes
 MEDICAL_AI_MODEL = os.getenv("MEDICAL_AI_MODEL", "")
@@ -979,8 +984,147 @@ async def _transcribe_with_assemblyai(file_bytes: bytes, filename: str) -> dict:
     }
 
 
+def _split_audio_into_chunks(file_bytes: bytes, chunk_minutes: int = AUDIO_CHUNK_MINUTES) -> list[tuple[bytes, float]]:
+    """Split audio bytes into time-based chunks using PyAV.
+
+    Returns a list of (chunk_bytes_as_mp3, start_offset_seconds) tuples.
+    Falls back to returning the original file as a single chunk if anything goes wrong.
+    """
+    try:
+        import av
+        import io as _io
+
+        chunk_duration = chunk_minutes * 60.0
+
+        # Probe the total duration first (read-only pass)
+        with av.open(_io.BytesIO(file_bytes)) as probe:
+            audio_stream = next((s for s in probe.streams if s.type == "audio"), None)
+            if not audio_stream:
+                logger.warning("Audio chunking: no audio stream found — returning original file")
+                return [(file_bytes, 0.0)]
+            total_seconds = (
+                float(audio_stream.duration * audio_stream.time_base)
+                if audio_stream.duration and audio_stream.time_base
+                else 0.0
+            )
+
+        if total_seconds <= 0 or total_seconds <= chunk_duration:
+            return [(file_bytes, 0.0)]
+
+        n_chunks = int(total_seconds / chunk_duration) + (1 if total_seconds % chunk_duration else 0)
+        logger.info(
+            "Audio chunking: %.1f s → %d chunks of %d min each",
+            total_seconds, n_chunks, chunk_minutes,
+        )
+
+        chunks: list[tuple[bytes, float]] = []
+        for i in range(n_chunks):
+            start = i * chunk_duration
+            end = min(start + chunk_duration, total_seconds)
+
+            in_container = av.open(_io.BytesIO(file_bytes))
+            in_stream = next(s for s in in_container.streams if s.type == "audio")
+
+            out_buf = _io.BytesIO()
+            out_container = av.open(out_buf, mode="w", format="mp3")
+            out_stream = out_container.add_stream("libmp3lame", rate=16000)
+            out_stream.bit_rate = 64000
+            out_stream.layout = "mono"
+
+            resampler = av.AudioResampler(format="s16p", layout="mono", rate=16000)
+
+            # Seek to chunk start
+            seek_ts = int(start / float(in_stream.time_base))
+            in_container.seek(seek_ts, stream=in_stream)
+
+            for frame in in_container.decode(in_stream):
+                frame_time = float(frame.pts * in_stream.time_base) if frame.pts is not None else start
+                if frame_time >= end:
+                    break
+                for rframe in resampler.resample(frame):
+                    for packet in out_stream.encode(rframe):
+                        out_container.mux(packet)
+
+            # Flush resampler + encoder
+            for rframe in resampler.resample(None):
+                for packet in out_stream.encode(rframe):
+                    out_container.mux(packet)
+            for packet in out_stream.encode(None):
+                out_container.mux(packet)
+
+            out_container.close()
+            in_container.close()
+
+            chunk_data = out_buf.getvalue()
+            if chunk_data:
+                chunks.append((chunk_data, start))
+            else:
+                logger.warning("Audio chunking: chunk %d/%d produced empty bytes — skipping", i + 1, n_chunks)
+
+        return chunks if chunks else [(file_bytes, 0.0)]
+
+    except Exception as exc:
+        logger.warning("Audio chunking failed (%s) — falling back to single-file transcription", exc)
+        return [(file_bytes, 0.0)]
+
+
+async def _transcribe_with_deepgram_chunked(file_bytes: bytes, filename: str) -> dict:
+    """Transcribe audio using Deepgram with parallel chunk processing.
+
+    - For files short enough to fit in one chunk, delegates directly to _transcribe_with_deepgram.
+    - For longer files, splits into AUDIO_CHUNK_MINUTES-length segments, transcribes all in
+      parallel via asyncio.gather, then stitches the results together.
+    - Speaker labels are kept chunk-local (Deepgram cannot cross-match speakers across requests),
+      so labels within each chunk are reliable but may restart numbering per chunk.
+    """
+    chunks = await asyncio.to_thread(_split_audio_into_chunks, file_bytes)
+
+    if len(chunks) == 1:
+        # Single chunk — use the standard path (no overhead)
+        return await _transcribe_with_deepgram(file_bytes, filename)
+
+    logger.info("Parallel Deepgram transcription: %d chunks", len(chunks))
+
+    async def _transcribe_chunk(chunk_bytes: bytes, offset: float, idx: int) -> dict:
+        chunk_filename = f"chunk_{idx:03d}_{filename}"
+        result = await _transcribe_with_deepgram(chunk_bytes, chunk_filename)
+        return result
+
+    tasks = [_transcribe_chunk(cb, off, i) for i, (cb, off) in enumerate(chunks)]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    all_paragraphs: list[dict] = []
+    raw_parts: list[str] = []
+    total_duration = 0
+
+    for i, res in enumerate(results):
+        if isinstance(res, Exception):
+            logger.error("Chunk %d transcription failed: %s", i, res)
+            continue
+        total_duration += res.get("duration_seconds", 0)
+        raw_parts.append(res.get("raw_transcript", ""))
+        all_paragraphs.extend(res.get("paragraphs", []))
+
+    if not all_paragraphs and not raw_parts:
+        raise RuntimeError("All audio chunks failed during transcription")
+
+    return {
+        "duration_seconds": total_duration,
+        "paragraphs": all_paragraphs,
+        "raw_transcript": "\n\n".join(p for p in raw_parts if p),
+        "provider": "deepgram-chunked",
+    }
+
+
 def _select_transcription_provider(file_size_bytes: int) -> str:
-    """Determine which transcription provider to use based on config and file size."""
+    """Determine which transcription provider to use based on config and file size.
+
+    Routing logic:
+    - Explicit override (TRANSCRIPTION_PROVIDER env var) → honour it.
+    - Files above ASSEMBLYAI_FALLBACK_BYTES → AssemblyAI directly (avoids chunking overhead
+      for very large files that AssemblyAI handles natively).
+    - Everything else → Deepgram with parallel chunking.
+    """
     if TRANSCRIPTION_PROVIDER == "assemblyai":
         if not assemblyai_available:
             logger.warning("AssemblyAI requested but not configured — falling back to Deepgram.")
@@ -989,7 +1133,7 @@ def _select_transcription_provider(file_size_bytes: int) -> str:
     elif TRANSCRIPTION_PROVIDER == "deepgram":
         return "deepgram"
     else:  # "auto"
-        if assemblyai_available and file_size_bytes > AUTO_ROUTE_THRESHOLD_BYTES:
+        if assemblyai_available and file_size_bytes > ASSEMBLYAI_FALLBACK_BYTES:
             return "assemblyai"
         return "deepgram"
 
@@ -1060,7 +1204,18 @@ async def transcribe_audio(
         if provider == "assemblyai":
             result = await _transcribe_with_assemblyai(file_bytes, filename)
         else:
-            result = await _transcribe_with_deepgram(file_bytes, filename)
+            # Deepgram with parallel chunking; fall back to AssemblyAI on failure
+            try:
+                result = await _transcribe_with_deepgram_chunked(file_bytes, filename)
+            except Exception as deepgram_exc:
+                if assemblyai_available:
+                    logger.warning(
+                        "Deepgram transcription failed (%s) — falling back to AssemblyAI.", deepgram_exc
+                    )
+                    result = await _transcribe_with_assemblyai(file_bytes, filename)
+                else:
+                    raise
+
 
         # Cleanup temp audio from Supabase
         if file_path:
