@@ -18,14 +18,20 @@ import {
   Cpu,
   FilePlus2,
   Stethoscope,
-  X
+  X,
+  Shield,
+  CheckCircle,
+  XCircle,
+  HelpCircle
 } from "lucide-react";
 import { jsPDF } from "jspdf";
+import { Routes, Route, useNavigate } from "react-router-dom";
 import LiveStreamView from "./LiveStreamView";
 import SubjectMatterDropdown from "./SubjectMatterDropdown";
 import AuthModal from "./AuthModal";
 import NotificationModal from "./NotificationModal";
 import ProcessingModal from "./ProcessingModal";
+import Dashboard from "./Dashboard";
 import { supabase } from "./supabaseClient";
 
 // File upload limits — must match backend MAX_UPLOAD_BYTES
@@ -97,6 +103,13 @@ const getApiBaseUrl = () => {
 
 const API_BASE_URL = getApiBaseUrl();
 
+const CROSSREF_VERDICT_CONFIG = {
+  TRUE: { icon: CheckCircle, color: "#22c55e", bg: "rgba(34, 197, 94, 0.1)" },
+  FALSE: { icon: XCircle, color: "#ef4444", bg: "rgba(239, 68, 68, 0.1)" },
+  MISLEADING: { icon: AlertTriangle, color: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" },
+  UNVERIFIABLE: { icon: HelpCircle, color: "#6b7280", bg: "rgba(107, 114, 128, 0.1)" },
+};
+
 const getOrCreateUserUuid = () => {
   let uuid = localStorage.getItem("x-user-uuid");
   if (!uuid) {
@@ -108,6 +121,7 @@ const getOrCreateUserUuid = () => {
 
 export default function App() {
   const userUuid = getOrCreateUserUuid();
+  const navigate = useNavigate();
 
   // Authentication State
   const [user, setUser] = useState(null);
@@ -128,8 +142,6 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Navigation state: "home" or "livestream"
-  const [currentView, setCurrentView] = useState("home");
 
   const [status, setStatus] = useState({
     global_usage_minutes: 0,
@@ -207,6 +219,9 @@ export default function App() {
   const [ttsVoice, setTtsVoice] = useState("en-ZA-LeahNeural");
   const [isTtsSynthesizing, setIsTtsSynthesizing] = useState(false);
   const [ttsAudioUrl, setTtsAudioUrl] = useState(null);
+
+  const [crossReferenceResults, setCrossReferenceResults] = useState(null);
+  const [isCrossReferencing, setIsCrossReferencing] = useState(false);
 
   const downloadFile = (format, contentSource = transcript, filePrefix = "") => {
     if (!contentSource) return;
@@ -437,9 +452,26 @@ export default function App() {
     setDocumentTitle(finalTitle);
 
     const formData = new FormData();
-    formData.append("file", audioFile);
 
     try {
+      if (user && audioFile.size > 10 * 1024 * 1024) {
+        setProcessingStep("Uploading large audio file securely...");
+        const fileExt = audioFile.name.split('.').pop() || 'webm';
+        const fileName = `${user.id}/temp_audio/${Date.now()}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('context_documents')
+          .upload(fileName, audioFile);
+          
+        if (uploadError) {
+          throw new Error("Failed to upload audio to storage: " + uploadError.message);
+        }
+        
+        formData.append("file_path", fileName);
+      } else {
+        formData.append("file", audioFile);
+      }
+
       setProcessingStep("Transcribing audio and identifying speakers...");
       const response = await fetch(`${API_BASE_URL}/api/transcribe`, {
         method: "POST",
@@ -595,6 +627,47 @@ export default function App() {
     }
   };
 
+  const runCrossReference = async () => {
+    if (!transcript || !user) return;
+    setIsCrossReferencing(true);
+    setCrossReferenceResults(null);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || "";
+
+      const response = await fetch(`${API_BASE_URL}/api/synthesis/cross-reference`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        signal: controller.signal,
+        body: JSON.stringify({ transcript }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.detail || "Cross-reference failed");
+      }
+
+      const data = await response.json();
+      setCrossReferenceResults(data.results || []);
+    } catch (err) {
+      if (err.name === "AbortError") {
+        showNotification("warning", "Request Timed Out", "The cross-reference request took too long and was cancelled. Please try again.");
+      } else {
+        showNotification("error", "Cross-Reference Error", err.message);
+      }
+    } finally {
+      clearTimeout(timeout);
+      setIsCrossReferencing(false);
+    }
+  };
+
   const handleTtsSynthesis = async () => {
     if (!transcript) return;
 
@@ -679,33 +752,24 @@ export default function App() {
 
 
 
-  // LiveStream view takes over the entire page
-  if (currentView === "livestream") {
-    return <LiveStreamView onBack={() => setCurrentView("home")} user={user} />;
-  }
-
-  if (status.is_over_budget) {
-    return (
-      <div className="container fade-in">
-        <div className="over-budget-container">
-          <div className="over-budget-icon" style={{ textShadow: "0 0 30px var(--accent-cyan-glow)", color: "var(--accent-cyan)" }}>🎙️</div>
-          <h1 style={{ fontSize: "2rem", marginBottom: "16px", color: "var(--accent-cyan)" }}>Server resting...</h1>
-          <h2 style={{ fontSize: "1.2rem", marginBottom: "24px", color: "var(--text-primary)" }}>We've Hit the Monthly Ceiling!</h2>
-          <p style={{ marginBottom: "32px", fontSize: "0.95rem" }}>
-            The free server budget for transcriptions has been fully consumed for this month.
-            We cap execution limits on relaxntakenotes.africa to keep our hosting free for everyone.
-            We will be back online automatically next month.
-          </p>
-          <div style={{ display: "flex", gap: "16px" }}>
-            <button className="btn btn-secondary" onClick={fetchStatus}>Check Again</button>
-            <a href="mailto:support@relaxntakenotes.africa" className="btn btn-primary">Upgrade Platform</a>
-          </div>
+  const homeView = status.is_over_budget ? (
+    <div className="container fade-in">
+      <div className="over-budget-container">
+        <div className="over-budget-icon" style={{ textShadow: "0 0 30px var(--accent-cyan-glow)", color: "var(--accent-cyan)" }}>🎙️</div>
+        <h1 style={{ fontSize: "2rem", marginBottom: "16px", color: "var(--accent-cyan)" }}>Server resting...</h1>
+        <h2 style={{ fontSize: "1.2rem", marginBottom: "24px", color: "var(--text-primary)" }}>We've Hit the Monthly Ceiling!</h2>
+        <p style={{ marginBottom: "32px", fontSize: "0.95rem" }}>
+          The free server budget for transcriptions has been fully consumed for this month.
+          We cap execution limits on relaxntakenotes.africa to keep our hosting free for everyone.
+          We will be back online automatically next month.
+        </p>
+        <div style={{ display: "flex", gap: "16px" }}>
+          <button className="btn btn-secondary" onClick={fetchStatus}>Check Again</button>
+          <a href="mailto:support@relaxntakenotes.africa" className="btn btn-primary">Upgrade Platform</a>
         </div>
       </div>
-    );
-  }
-
-  return (
+    </div>
+  ) : (
     <>
       <div className="fade-in" style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       <div style={{ flexGrow: 1 }}>
@@ -715,21 +779,28 @@ export default function App() {
           <div className="container">
             {/* Header */}
             <header className="header" style={{ marginBottom: "4px" }}>
-              <div className="logo" onClick={() => { setTranscript(""); setAudioFile(null); }}>
+              <div className="logo" onClick={() => { setTranscript(""); setAudioFile(null); navigate("/"); }}>
                 <AfricaMicLogo />
                 Relax n Take Notes
               </div>
           <nav className="header-nav" style={{ display: "flex", alignItems: "center", gap: "12px", marginLeft: "20px" }}>
             {user ? (
               <>
-                <button 
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => navigate("/dashboard")}
+                  style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                >
+                  Dashboard
+                </button>
+                <button
                   className="btn btn-secondary"
                   onClick={() => showNotification("info", "Coming Soon", "The Resources feature is currently under development and will be available soon.")}
                   style={{ padding: "6px 12px", fontSize: "0.85rem" }}
                 >
                   Resources
                 </button>
-                <button 
+                <button
                   className="btn btn-primary"
                   onClick={() => supabase.auth.signOut()}
                   style={{ padding: "6px 12px", fontSize: "0.85rem" }}
@@ -796,7 +867,7 @@ export default function App() {
                 </button>
                 <button
                   className="btn btn-accent"
-                  onClick={() => setCurrentView("livestream")}
+                  onClick={() => navigate("/livestream")}
                   style={{ padding: "14px 28px", fontSize: "0.9rem", letterSpacing: "0.02em", background: "linear-gradient(135deg, rgba(138, 43, 226, 0.8) 0%, rgba(0, 240, 255, 0.6) 100%)", border: "none", color: "#fff" }}
                 >
                   <Mic size={16} /> Go Live — Real-Time Transcription
@@ -1454,6 +1525,14 @@ export default function App() {
                     >
                       Voice (TTS)
                     </button>
+                    {user && (
+                      <button
+                        className={`tab ${aiActiveTab === 'crossref' ? 'active' : ''}`}
+                        onClick={() => setAiActiveTab("crossref")}
+                      >
+                        Cross-Reference
+                      </button>
+                    )}
                   </div>
 
                   {/* Tab Contents */}
@@ -1622,6 +1701,80 @@ export default function App() {
                         )}
                       </div>
                     )}
+
+                    {user && aiActiveTab === "crossref" && (
+                      <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: "12px" }}>
+                        <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                          Cross-reference claims in this transcript against your uploaded support documents
+                          (RAG) and the web (Serper), and get a TRUE / FALSE / MISLEADING / UNVERIFIABLE verdict for each.
+                        </p>
+                        <button
+                          className="btn btn-primary"
+                          disabled={isCrossReferencing}
+                          onClick={runCrossReference}
+                        >
+                          <Shield size={12} className={isCrossReferencing ? "spinning" : ""} />
+                          {isCrossReferencing ? "Cross-Referencing..." : "Run Cross-Reference & Fact-Check"}
+                        </button>
+                        <div className="ai-output-box">
+                          {!crossReferenceResults ? (
+                            <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: "0.75rem" }}>
+                              No cross-reference run yet. Click the button above.
+                            </span>
+                          ) : crossReferenceResults.length === 0 ? (
+                            <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: "0.75rem" }}>
+                              No verifiable claims were detected in this transcript.
+                            </span>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                              {crossReferenceResults.map((result, idx) => {
+                                const config = CROSSREF_VERDICT_CONFIG[result.verdict] || CROSSREF_VERDICT_CONFIG.UNVERIFIABLE;
+                                const VerdictIcon = config.icon;
+                                return (
+                                  <div
+                                    key={idx}
+                                    style={{
+                                      border: `1px solid ${config.color}33`,
+                                      background: config.bg,
+                                      borderRadius: "var(--radius-md)",
+                                      padding: "12px",
+                                    }}
+                                  >
+                                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                                      <VerdictIcon size={14} color={config.color} />
+                                      <span style={{ fontSize: "0.7rem", fontWeight: 700, color: config.color, fontFamily: "var(--font-heading)" }}>
+                                        {result.verdict}
+                                      </span>
+                                      {result.speaker && (
+                                        <span style={{ fontSize: "0.65rem", color: "var(--text-secondary)" }}>
+                                          — {result.speaker}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p style={{ fontSize: "0.8rem", marginBottom: "6px" }}>{result.claim}</p>
+                                    {result.explanation && (
+                                      <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "6px" }}>
+                                        {result.explanation}
+                                      </p>
+                                    )}
+                                    {result.document_sources?.length > 0 && (
+                                      <p style={{ fontSize: "0.7rem", color: "var(--accent-cyan)" }}>
+                                        Support docs: {result.document_sources.map(s => s.file_name).join(", ")}
+                                      </p>
+                                    )}
+                                    {result.sources?.length > 0 && (
+                                      <p style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
+                                        Web sources: {result.sources.length}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1685,19 +1838,29 @@ export default function App() {
       />
 
     </div>
+    </>
+  );
 
-    {/* Auth Modal rendered at root level */}
-    <AuthModal
-      isOpen={isAuthModalOpen}
-      onClose={() => setIsAuthModalOpen(false)}
-      defaultTab={authModalTab}
-    />
-    <ProcessingModal
-      isOpen={isProcessing}
-      stepMessage={processingStep}
-      onCancel={cancelProcessing}
-      onRestart={restartProcessing}
-    />
+  return (
+    <>
+      <Routes>
+        <Route path="/" element={homeView} />
+        <Route path="/livestream" element={<LiveStreamView onBack={() => navigate("/")} user={user} />} />
+        <Route path="/dashboard" element={<Dashboard user={user} />} />
+      </Routes>
+
+      {/* Auth Modal rendered at root level */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        defaultTab={authModalTab}
+      />
+      <ProcessingModal
+        isOpen={isProcessing}
+        stepMessage={processingStep}
+        onCancel={cancelProcessing}
+        onRestart={restartProcessing}
+      />
     </>
   );
 }

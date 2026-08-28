@@ -26,6 +26,11 @@ import edge_tts
 import httpx
 import requests
 import json
+import io
+import uuid
+import numpy as np
+from pypdf import PdfReader
+from docx import Document as DocxDocument
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -73,11 +78,128 @@ MAX_RECORDING_DURATION_MINUTES = int(os.getenv("MAX_RECORDING_DURATION_MINUTES",
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
 
+# Embedding model for support-document RAG
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+
+# Registration confirmation gate — false for testing (auto-confirm + auto sign-in),
+# set true before production launch to restore normal Supabase email confirmation.
+REQUIRE_EMAIL_CONFIRMATION = os.getenv("REQUIRE_EMAIL_CONFIRMATION", "false").lower() == "true"
+
 # AssemblyAI — alternative transcription provider for long-form audio
 ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY", "")
 TRANSCRIPTION_PROVIDER = os.getenv("TRANSCRIPTION_PROVIDER", "auto").lower()  # auto | deepgram | assemblyai
 AUTO_ROUTE_THRESHOLD_MB = int(os.getenv("AUTO_ROUTE_THRESHOLD_MB", "50"))
 AUTO_ROUTE_THRESHOLD_BYTES = AUTO_ROUTE_THRESHOLD_MB * 1024 * 1024
+
+# Subject Matter Specialization — model + prompt overrides per domain
+# Each domain can optionally specify a dedicated AI model and domain-specific prompt prefixes
+MEDICAL_AI_MODEL = os.getenv("MEDICAL_AI_MODEL", "")
+
+SUBJECT_MATTER_CONFIG = {
+    "General": {
+        "model": None,  # Use default AI_MODEL
+        "summary_prefix": "",
+        "insights_prefix": "",
+        "livestream_notes_prefix": "",
+    },
+    "Medical": {
+        "model": MEDICAL_AI_MODEL or None,
+        "summary_prefix": (
+            "You are a medical transcription specialist with expertise in clinical documentation. "
+            "Structure the summary using medical documentation standards:\n"
+            "- **Chief Complaint / Reason for Visit** (if identifiable)\n"
+            "- **History of Present Illness (HPI)**\n"
+            "- **Assessment / Differential Diagnoses discussed**\n"
+            "- **Plan / Recommended Actions**\n"
+            "- **Medications mentioned** (with dosages if stated)\n"
+            "- **Follow-up / Referrals**\n"
+            "Use proper medical terminology. Flag any drug interactions or contraindications mentioned. "
+            "IMPORTANT: This is an AI-assisted summary and should NOT replace professional medical judgment.\n\n"
+        ),
+        "insights_prefix": (
+            "You are a clinical analyst reviewing a medical transcript. Extract:\n"
+            "- **Clinical Findings** — symptoms, diagnoses, lab results discussed\n"
+            "- **Medications & Dosages** — all drugs mentioned with context\n"
+            "- **Treatment Decisions** — agreed-upon treatment paths\n"
+            "- **Referrals & Follow-ups** — specialist referrals, next appointments\n"
+            "- **Patient Safety Flags** — any allergies, contraindications, or warnings mentioned\n"
+            "- **Unresolved Clinical Questions** — pending tests, uncertain diagnoses\n"
+            "Use clinical terminology. Flag items requiring urgent attention.\n\n"
+        ),
+        "livestream_notes_prefix": (
+            "You are a medical meeting assistant with expertise in clinical documentation. "
+            "Analyze the transcript with a medical lens. In addition to the standard sections, include:\n"
+            "- **Clinical Findings** — symptoms, diagnoses, lab results, vitals discussed\n"
+            "- **Medications & Dosages** — all drugs mentioned with dosages and context\n"
+            "- **Patient Safety Flags** — allergies, contraindications, drug interactions\n"
+            "Use proper medical terminology throughout.\n\n"
+        ),
+    },
+    "Legal": {
+        "model": None,  # Placeholder — configure via LEGAL_AI_MODEL env var when ready
+        "summary_prefix": (
+            "You are a legal transcription specialist. Structure the summary highlighting:\n"
+            "- **Case References & Citations** mentioned\n"
+            "- **Legal Arguments & Positions** presented\n"
+            "- **Rulings, Decisions & Orders** made\n"
+            "- **Stipulations & Agreements** reached\n"
+            "- **Deadlines & Filing Requirements** discussed\n"
+            "Use precise legal terminology. Note any procedural motions.\n\n"
+        ),
+        "insights_prefix": (
+            "You are a legal analyst. Extract:\n"
+            "- **Key Legal Issues** — statutes, regulations, precedents referenced\n"
+            "- **Arguments Made** — by each party/speaker\n"
+            "- **Obligations & Deadlines** — filing dates, compliance requirements\n"
+            "- **Risk Factors** — potential liabilities or exposures identified\n"
+            "Use legal terminology precisely.\n\n"
+        ),
+        "livestream_notes_prefix": "",
+    },
+    "Education": {
+        "model": None,  # Placeholder — configure via EDUCATION_AI_MODEL env var when ready
+        "summary_prefix": (
+            "You are an educational content specialist. Structure the summary as:\n"
+            "- **Learning Objectives** covered in the session\n"
+            "- **Key Concepts & Definitions** introduced\n"
+            "- **Examples & Illustrations** used\n"
+            "- **Assignments & Assessments** mentioned\n"
+            "- **Study Resources** referenced\n"
+            "Format for student comprehension and review.\n\n"
+        ),
+        "insights_prefix": (
+            "You are an educational analyst. Extract:\n"
+            "- **Core Topics** — main subjects and subtopics covered\n"
+            "- **Key Takeaways** — critical concepts students should remember\n"
+            "- **Action Items** — homework, readings, project deadlines\n"
+            "- **Questions Raised** — unanswered student questions for follow-up\n"
+            "Format for easy study reference.\n\n"
+        ),
+        "livestream_notes_prefix": "",
+    },
+    "Finance": {
+        "model": None,  # Placeholder — configure via FINANCE_AI_MODEL env var when ready
+        "summary_prefix": (
+            "You are a financial transcription specialist. Structure the summary highlighting:\n"
+            "- **Financial Metrics & KPIs** discussed\n"
+            "- **Budget Items & Allocations** mentioned\n"
+            "- **Investment Decisions & Risk Assessments**\n"
+            "- **Regulatory & Compliance Matters**\n"
+            "- **Action Items with Financial Impact**\n"
+            "Use precise financial terminology. Note any figures, percentages, and currency amounts exactly.\n\n"
+        ),
+        "insights_prefix": (
+            "You are a financial analyst. Extract:\n"
+            "- **Key Financial Data** — numbers, projections, comparisons mentioned\n"
+            "- **Decisions with Financial Impact** — approvals, budget changes\n"
+            "- **Risk Factors** — identified financial risks or exposures\n"
+            "- **Compliance Items** — regulatory requirements discussed\n"
+            "- **Follow-up Actions** — with estimated financial impact where possible\n"
+            "Be precise with all numerical values.\n\n"
+        ),
+        "livestream_notes_prefix": "",
+    },
+}
 
 # Security
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(170 * 1024 * 1024)))  # 170 MB
@@ -279,6 +401,44 @@ async def _call_ai(system_prompt: str, user_prompt: str) -> str:
     return response.choices[0].message.content
 
 
+async def _call_ai_with_model(system_prompt: str, user_prompt: str, model_override: str = None) -> str:
+    """Run AI chat completion with optional model override for subject-matter routing.
+
+    If model_override is provided and non-empty, attempts to use it.
+    Falls back to the default model if the override fails.
+    """
+    model = model_override or _hf_active_model
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    try:
+        response = await asyncio.to_thread(
+            hf_client.chat_completion,
+            model=model,
+            messages=messages,
+            max_tokens=2048,
+            temperature=0.3,
+        )
+        return response.choices[0].message.content
+    except Exception as exc:
+        if model != _hf_active_model:
+            logger.warning(
+                "Subject-matter model '%s' failed (%s), falling back to default model.",
+                model, exc,
+            )
+            response = await asyncio.to_thread(
+                hf_client.chat_completion,
+                model=_hf_active_model,
+                messages=messages,
+                max_tokens=2048,
+                temperature=0.3,
+            )
+            return response.choices[0].message.content
+        raise
+
+
 # --- Transcript Chunking ---
 # Most LLMs have context windows of 8k-32k tokens (~6k-24k words).
 # A 1.5-hour transcript can be ~15,000-20,000 words.
@@ -348,6 +508,135 @@ async def _call_ai_chunked(system_prompt: str, transcript: str, synthesis_prompt
 
 
 # ---------------------------------------------------------------------------
+# Support Document RAG — text extraction, chunking, embedding, retrieval
+# ---------------------------------------------------------------------------
+DOC_CHUNK_WORD_LIMIT = int(os.getenv("DOC_CHUNK_WORD_LIMIT", "250"))
+
+
+def _extract_text_from_document(filename: str, content_type: Optional[str], file_bytes: bytes) -> str:
+    """Extract plain text from an uploaded support document."""
+    lower_name = (filename or "").lower()
+
+    if lower_name.endswith(".pdf") or content_type == "application/pdf":
+        reader = PdfReader(io.BytesIO(file_bytes))
+        return "\n\n".join(page.extract_text() or "" for page in reader.pages)
+
+    if lower_name.endswith(".docx") or content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        doc = DocxDocument(io.BytesIO(file_bytes))
+        return "\n\n".join(p.text for p in doc.paragraphs)
+
+    # txt, md, csv, and anything else — treat as plain text
+    return file_bytes.decode("utf-8", errors="replace")
+
+
+def _embed_text(text: str) -> list[float]:
+    """Generate a single dense embedding vector for a piece of text via HF Inference."""
+    result = hf_client.feature_extraction(text, model=EMBEDDING_MODEL)
+    arr = np.array(result, dtype=float)
+    if arr.ndim > 1:
+        # Some models return per-token vectors — mean-pool into one sentence vector.
+        arr = arr.mean(axis=0)
+    return arr.flatten().tolist()
+
+
+async def _retrieve_relevant_chunks(user_id: str, query_text: str, top_k: int = 5) -> list[dict]:
+    """Vector-search a user's uploaded support documents for chunks relevant to query_text."""
+    if not supabase or not query_text.strip():
+        return []
+    try:
+        query_embedding = await asyncio.to_thread(_embed_text, query_text)
+        resp = await asyncio.to_thread(
+            lambda: supabase.rpc(
+                "match_document_chunks",
+                {
+                    "query_embedding": query_embedding,
+                    "match_user_id": user_id,
+                    "match_count": top_k,
+                },
+            ).execute()
+        )
+        return resp.data or []
+    except Exception as exc:
+        logger.warning("Document retrieval failed for user %s: %s", user_id, exc)
+        return []
+
+
+@app.post("/api/documents/upload")
+async def upload_document(file: UploadFile = File(...), user=Depends(get_current_user)):
+    """Upload a support document: store it, extract its text, chunk it, and embed
+    each chunk for later RAG retrieval during fact-checking / cross-referencing."""
+    if not user:
+        raise HTTPException(status_code=401, detail="Sign in required.")
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage service unavailable.")
+
+    file_bytes = await file.read()
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum allowed size is {MAX_UPLOAD_BYTES // (1024*1024)} MB.",
+        )
+
+    file_name = file.filename or "document"
+    storage_path = f"{user.id}/{uuid.uuid4()}-{file_name}"
+
+    try:
+        await asyncio.to_thread(
+            supabase.storage.from_("context_documents").upload,
+            storage_path,
+            file_bytes,
+            {"content-type": file.content_type or "application/octet-stream"},
+        )
+
+        doc_resp = await asyncio.to_thread(
+            lambda: _execute_with_retry(
+                supabase.table("context_documents").insert({
+                    "user_id": user.id,
+                    "file_name": file_name,
+                    "storage_path": storage_path,
+                    "content_type": file.content_type,
+                    "size_bytes": len(file_bytes),
+                })
+            )
+        )
+        document_id = doc_resp.data[0]["id"]
+
+        text = _extract_text_from_document(file_name, file.content_type, file_bytes)
+        chunks = _split_transcript_into_chunks(text, max_words=DOC_CHUNK_WORD_LIMIT) if text.strip() else []
+
+        chunk_rows = []
+        for i, chunk_text in enumerate(chunks):
+            if not chunk_text.strip():
+                continue
+            embedding = await asyncio.to_thread(_embed_text, chunk_text)
+            chunk_rows.append({
+                "document_id": document_id,
+                "user_id": user.id,
+                "chunk_index": i,
+                "chunk_text": chunk_text,
+                "embedding": embedding,
+            })
+
+        if chunk_rows:
+            await asyncio.to_thread(
+                lambda: _execute_with_retry(
+                    supabase.table("document_chunks").insert(chunk_rows)
+                )
+            )
+
+        return {
+            "id": document_id,
+            "file_name": file_name,
+            "chunks_indexed": len(chunk_rows),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Document upload failed")
+        raise HTTPException(status_code=500, detail=f"Document upload failed: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # Pydantic schemas
 # ---------------------------------------------------------------------------
 class AIFeaturesRequest(BaseModel):
@@ -355,6 +644,7 @@ class AIFeaturesRequest(BaseModel):
     feature_type: str  # "summary" | "insights" | "translation"
     metadata: Optional[dict] = None
     target_language: Optional[str] = "French"
+    subject_matter: Optional[str] = "General"
 
     @field_validator("feature_type")
     @classmethod
@@ -402,6 +692,106 @@ async def get_status(request: Request, user_hash: str = Depends(get_user_hash)):
         "is_over_budget": global_min >= MONTHLY_LIMIT_MINUTES,
         "user_is_over_limit": user_min >= USER_MONTHLY_LIMIT_MINUTES,
         "max_recording_duration_minutes": MAX_RECORDING_DURATION_MINUTES,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Auth — registration
+# ---------------------------------------------------------------------------
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    first_name: str
+    last_name: str
+    organization_name: str
+    organization_address: Optional[str] = None
+
+
+@app.post("/api/auth/register")
+async def register_user(payload: RegisterRequest):
+    """Create a new account.
+
+    Gated by REQUIRE_EMAIL_CONFIRMATION:
+    - false (testing/dev, current default): account is created pre-confirmed via the
+      admin API and immediately signed in, so the frontend can redirect straight to
+      the dashboard with no email step.
+    - true (flip before production launch): account is created unconfirmed and Supabase
+      sends its normal confirmation email; no session is returned.
+    """
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Auth service unavailable.")
+
+    user_metadata = {
+        "first_name": payload.first_name,
+        "last_name": payload.last_name,
+        "organization_name": payload.organization_name,
+        "organization_address": payload.organization_address,
+    }
+
+    try:
+        create_resp = await asyncio.to_thread(
+            supabase.auth.admin.create_user,
+            {
+                "email": payload.email,
+                "password": payload.password,
+                "email_confirm": not REQUIRE_EMAIL_CONFIRMATION,
+                "user_metadata": user_metadata,
+            },
+        )
+    except Exception as exc:
+        logger.warning("Registration failed for %s: %s", payload.email, exc)
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not create_resp or not create_resp.user:
+        raise HTTPException(status_code=400, detail="Registration failed.")
+
+    if REQUIRE_EMAIL_CONFIRMATION:
+        return {"status": "pending_confirmation"}
+
+    try:
+        session_resp = await asyncio.to_thread(
+            supabase.auth.sign_in_with_password,
+            {"email": payload.email, "password": payload.password},
+        )
+    except Exception as exc:
+        logger.error("Post-registration auto sign-in failed for %s: %s", payload.email, exc)
+        # Account was created successfully even though auto sign-in failed — let the
+        # user sign in manually rather than surfacing this as a registration failure.
+        return {"status": "pending_confirmation"}
+
+    return {
+        "status": "confirmed",
+        "access_token": session_resp.session.access_token,
+        "refresh_token": session_resp.session.refresh_token,
+    }
+
+
+@app.get("/api/dashboard/stats")
+async def get_dashboard_stats(user=Depends(get_current_user)):
+    if not user:
+        raise HTTPException(status_code=401, detail="Sign in required.")
+    if not supabase:
+        return {"files_processed": 0, "total_seconds": 0}
+
+    try:
+        resp = await asyncio.to_thread(
+            lambda: _execute_with_retry(
+                supabase.table("usage_logs")
+                .select("duration_seconds")
+                .eq("user_id", user.id)
+            )
+        )
+        files_processed = len(resp.data)
+        total_seconds = sum(r["duration_seconds"] for r in resp.data)
+    except Exception as exc:
+        logger.warning("Failed to fetch dashboard stats for %s: %s", user.id, exc)
+        files_processed, total_seconds = 0, 0
+
+    return {
+        "files_processed": files_processed,
+        "total_seconds": total_seconds,
+        "total_minutes": round(total_seconds / 60.0, 1),
+        "total_hours": round(total_seconds / 3600.0, 2),
     }
 
 
@@ -607,8 +997,10 @@ def _select_transcription_provider(file_size_bytes: int) -> str:
 @app.post("/api/transcribe")
 async def transcribe_audio(
     request: Request,
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    file_path: Optional[str] = Form(None),
     user_hash: str = Depends(get_user_hash),
+    user=Depends(get_current_user),
 ):
     # Budget enforcement
     if supabase:
@@ -625,27 +1017,60 @@ async def transcribe_audio(
             )
 
     try:
-        file_bytes = await file.read()
-        if len(file_bytes) > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large. Maximum allowed size is {MAX_UPLOAD_BYTES // (1024*1024)} MB.",
-            )
+        if file_path:
+            if not supabase:
+                raise HTTPException(status_code=503, detail="Storage service unavailable.")
+            try:
+                storage_res = await asyncio.to_thread(
+                    supabase.storage.from_("context_documents").download,
+                    file_path
+                )
+                file_bytes = storage_res
+                filename = os.path.basename(file_path)
+            except Exception as exc:
+                logger.error("Failed to download audio from storage: %s", exc)
+                raise HTTPException(status_code=400, detail="Failed to retrieve uploaded audio from storage.")
+            
+            # Use fixed 170MB limit for storage uploads bypassing Nginx
+            if len(file_bytes) > (170 * 1024 * 1024):
+                raise HTTPException(
+                    status_code=413,
+                    detail="File too large. Maximum allowed size is 170 MB.",
+                )
+        elif file:
+            file_bytes = await file.read()
+            filename = file.filename or "audio.webm"
+            if len(file_bytes) > MAX_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File too large. Maximum allowed size is {MAX_UPLOAD_BYTES // (1024*1024)} MB.",
+                )
+        else:
+            raise HTTPException(status_code=400, detail="Must provide either file or file_path")
 
         provider = _select_transcription_provider(len(file_bytes))
         logger.info(
-            "Transcribe: file=%s  type=%s  size=%d bytes  provider=%s",
-            file.filename,
-            file.content_type,
+            "Transcribe: file=%s size=%d bytes provider=%s",
+            filename,
             len(file_bytes),
             provider,
         )
 
         # Route to the selected provider
         if provider == "assemblyai":
-            result = await _transcribe_with_assemblyai(file_bytes, file.filename or "audio.webm")
+            result = await _transcribe_with_assemblyai(file_bytes, filename)
         else:
-            result = await _transcribe_with_deepgram(file_bytes, file.filename or "audio.webm")
+            result = await _transcribe_with_deepgram(file_bytes, filename)
+
+        # Cleanup temp audio from Supabase
+        if file_path:
+            try:
+                await asyncio.to_thread(
+                    supabase.storage.from_("context_documents").remove,
+                    [file_path]
+                )
+            except Exception as exc:
+                logger.warning("Failed to clean up temp audio file %s: %s", file_path, exc)
 
         duration_seconds = result["duration_seconds"]
 
@@ -658,10 +1083,13 @@ async def transcribe_audio(
         # Log usage
         if supabase:
             try:
+                usage_row = {"user_hash": user_hash, "duration_seconds": duration_seconds}
+                if user:
+                    usage_row["user_id"] = user.id
                 await asyncio.to_thread(
                     lambda: _execute_with_retry(
                         supabase.table("usage_logs")
-                        .insert({"user_hash": user_hash, "duration_seconds": duration_seconds})
+                        .insert(usage_row)
                     )
                 )
             except Exception as db_err:
@@ -682,11 +1110,17 @@ async def generate_ai_features(payload: AIFeaturesRequest):
     if not payload.transcript.strip():
         raise HTTPException(status_code=400, detail="Transcript is empty.")
 
+    # Resolve subject matter configuration
+    sm_key = payload.subject_matter or "General"
+    sm_config = SUBJECT_MATTER_CONFIG.get(sm_key, SUBJECT_MATTER_CONFIG["General"])
+    sm_model = sm_config.get("model")  # May be None — falls back to default
+
     # Build prompt
     user_prompt = f"Transcript:\n{payload.transcript}\n\n"
 
     if payload.feature_type == "summary":
-        system_prompt = (
+        domain_prefix = sm_config.get("summary_prefix", "")
+        system_prompt = domain_prefix + (
             "You are an expert AI note-taking and note-synthesizing assistant. "
             "Generate a highly structured summary of the provided transcript. "
             "Include a concise executive summary, followed by formal meeting minutes "
@@ -698,7 +1132,8 @@ async def generate_ai_features(payload: AIFeaturesRequest):
             system_prompt += f"\nUse this metadata context for the document:\n{meta_str}"
 
     elif payload.feature_type == "insights":
-        system_prompt = (
+        domain_prefix = sm_config.get("insights_prefix", "")
+        system_prompt = domain_prefix + (
             "You are a strategic analyst. "
             "Analyze the following transcript and extract the key takeaways, "
             "critical discussion points, specific actionable items (with assigned owners if mentioned), "
@@ -716,8 +1151,8 @@ async def generate_ai_features(payload: AIFeaturesRequest):
         raise HTTPException(status_code=400, detail="Invalid feature_type.")
 
     try:
-        result_text = await _call_ai(system_prompt, user_prompt)
-        return {"result": result_text}
+        result_text = await _call_ai_with_model(system_prompt, user_prompt, model_override=sm_model)
+        return {"result": result_text, "subject_matter": sm_key}
     except Exception as exc:
         logger.exception("AI inference error")
         raise HTTPException(
@@ -959,6 +1394,7 @@ async def livestream_websocket(websocket: WebSocket):
 class LivestreamAINotesRequest(BaseModel):
     transcript: str
     context: Optional[dict] = None
+    subject_matter: Optional[str] = "General"
 
 
 @app.post("/api/livestream/ai-notes")
@@ -967,7 +1403,13 @@ async def generate_livestream_notes(payload: LivestreamAINotesRequest):
     if not payload.transcript.strip():
         raise HTTPException(status_code=400, detail="Transcript is empty.")
 
-    system_prompt = (
+    # Resolve subject matter configuration
+    sm_key = payload.subject_matter or "General"
+    sm_config = SUBJECT_MATTER_CONFIG.get(sm_key, SUBJECT_MATTER_CONFIG["General"])
+    sm_model = sm_config.get("model")
+    domain_prefix = sm_config.get("livestream_notes_prefix", "")
+
+    system_prompt = domain_prefix + (
         "You are an expert real-time meeting assistant. Analyze the provided live transcript "
         "and generate structured notes. Your output MUST include:\n"
         "1. **Key Topics** — Main subjects discussed, as section headers\n"
@@ -997,7 +1439,7 @@ async def generate_livestream_notes(payload: LivestreamAINotesRequest):
                 "Key Topics, Decisions Made, Action Items, Important Quotes, Open Questions."
             )
         )
-        return {"result": result_text}
+        return {"result": result_text, "subject_matter": sm_key}
     except Exception as exc:
         logger.exception("LiveStream AI notes error")
         raise HTTPException(status_code=503, detail="AI service temporarily unavailable.")
@@ -1079,16 +1521,128 @@ async def detect_claims(payload: ClaimDetectionRequest):
         raise HTTPException(status_code=503, detail="AI service temporarily unavailable.")
 
 
+async def _fact_check_single_claim(claim_obj, doc_chunks: Optional[list] = None) -> dict:
+    """Verify one claim: search the web (Serper) for evidence, retrieve relevant
+    support-document chunks (if any), then ask the LLM for a verdict. Shared by
+    the livestream fact-check endpoint and the Synthesis Engine cross-reference endpoint.
+    """
+    claim_text = claim_obj.get("claim", "") if isinstance(claim_obj, dict) else str(claim_obj)
+    speaker = claim_obj.get("speaker", "") if isinstance(claim_obj, dict) else ""
+    category = claim_obj.get("category", "") if isinstance(claim_obj, dict) else ""
+
+    # Step 1: Search the web for evidence
+    evidence = ""
+    sources = []
+    if SERPER_API_KEY:
+        try:
+            search_resp = await asyncio.to_thread(
+                requests.post,
+                "https://google.serper.dev/search",
+                headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
+                json={"q": claim_text, "num": 5},
+                timeout=10.0
+            )
+            if search_resp.status_code == 200:
+                search_data = search_resp.json()
+                organic = search_data.get("organic", [])
+                for item in organic[:5]:
+                    title = item.get("title", "")
+                    snippet = item.get("snippet", "")
+                    link = item.get("link", "")
+                    evidence += f"Source: {title}\n{snippet}\nURL: {link}\n\n"
+                    sources.append({"title": title, "url": link, "snippet": snippet})
+                # Also check knowledge graph
+                kg = search_data.get("knowledgeGraph", {})
+                if kg:
+                    evidence += f"Knowledge Graph: {kg.get('title', '')} — {kg.get('description', '')}\n"
+        except Exception as search_err:
+            logger.warning("Serper search failed for claim: %s", search_err)
+
+    # Retrieved (RAG) document evidence, scoped to this specific claim
+    doc_context = ""
+    doc_sources = []
+    if doc_chunks:
+        doc_context = "SUPPORT DOCUMENT EVIDENCE:\n\n"
+        for chunk in doc_chunks:
+            doc_context += f"--- {chunk.get('file_name', 'document')} ---\n{chunk.get('chunk_text', '')}\n\n"
+            doc_sources.append({
+                "file_name": chunk.get("file_name", "document"),
+                "snippet": chunk.get("chunk_text", "")[:300],
+                "similarity": chunk.get("similarity"),
+            })
+
+    # Step 2: AI evaluation
+    eval_system = (
+        "You are a rigorous fact-checker. Evaluate the following claim against the provided evidence. "
+        "You MUST return a JSON object with:\n"
+        '{"verdict": "TRUE|FALSE|MISLEADING|UNVERIFIABLE", '
+        '"confidence": 0.0-1.0, '
+        '"explanation": "brief explanation of your reasoning", '
+        '"key_evidence": "the most relevant piece of evidence"}\n\n'
+        "RULES:\n"
+        "- TRUE: The claim is factually correct based on evidence\n"
+        "- FALSE: The claim is demonstrably incorrect\n"
+        "- MISLEADING: The claim contains partial truth but is presented in a misleading way\n"
+        "- UNVERIFIABLE: Insufficient evidence to verify or deny the claim\n"
+        "- Generalizations without specific data should be UNVERIFIABLE\n"
+        "- Actively look for counterevidence\n"
+        "- Return ONLY the JSON object, no other text."
+    )
+
+    eval_prompt = f"Claim: {claim_text}\n\n"
+    if evidence:
+        eval_prompt += f"Web Evidence:\n{evidence}\n"
+
+    if doc_context:
+        eval_prompt += f"Internal Organization Evidence:\n{doc_context}\n"
+
+    if not evidence and not doc_context:
+        eval_prompt += "No external evidence available. Use your knowledge base only.\n"
+
+    try:
+        eval_result = await _call_ai(eval_system, eval_prompt)
+        eval_result = eval_result.strip()
+        if eval_result.startswith("```"):
+            eval_result = eval_result.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        verdict_data = json.loads(eval_result)
+        return {
+            "claim": claim_text,
+            "speaker": speaker,
+            "category": category,
+            "verdict": verdict_data.get("verdict", "UNVERIFIABLE"),
+            "confidence": verdict_data.get("confidence", 0.5),
+            "explanation": verdict_data.get("explanation", ""),
+            "key_evidence": verdict_data.get("key_evidence", ""),
+            "sources": sources,
+            "document_sources": doc_sources,
+            "used_web_search": bool(evidence),
+        }
+    except (json.JSONDecodeError, Exception) as eval_err:
+        logger.warning("Fact-check evaluation failed for claim '%s': %s", claim_text[:50], eval_err)
+        return {
+            "claim": claim_text,
+            "speaker": speaker,
+            "category": category,
+            "verdict": "UNVERIFIABLE",
+            "confidence": 0.0,
+            "explanation": "Evaluation failed.",
+            "sources": sources,
+            "document_sources": doc_sources,
+            "used_web_search": bool(evidence),
+        }
+
+
 @app.post("/api/livestream/fact-check")
 async def fact_check_claims(payload: FactCheckRequest, user=Depends(get_current_user)):
-    """Verify factual claims using web search (Serper) + AI evaluation.
+    """Verify factual claims using web search (Serper) + support-document RAG + AI evaluation.
 
-    Pipeline:
-    1. For each claim, search the web for evidence (via Serper API)
-    2. Feed claim + evidence to AI for evaluation
-    3. Return verdict: TRUE, FALSE, MISLEADING, UNVERIFIABLE with confidence + sources
+    Pipeline per claim:
+    1. Search the web for evidence (via Serper API)
+    2. Vector-retrieve the most relevant chunks from the user's uploaded support documents
+    3. Feed claim + web evidence + retrieved document chunks to AI for evaluation
+    4. Return verdict: TRUE, FALSE, MISLEADING, UNVERIFIABLE with confidence + sources
 
-    Falls back to LLM-only evaluation if Serper API is unavailable.
+    Falls back to LLM-only evaluation if Serper API and support documents are both unavailable.
     """
     if not payload.claims and not payload.transcript:
         raise HTTPException(status_code=400, detail="No claims or transcript provided.")
@@ -1105,26 +1659,7 @@ async def fact_check_claims(payload: FactCheckRequest, user=Depends(get_current_
     if not claims_to_check:
         return {"results": [], "message": "No verifiable claims detected."}
 
-    # Fetch organization documents from Supabase if requested
-    org_context = ""
-    if payload.use_org_docs and user and supabase:
-        try:
-            # Get user's documents from database
-            docs_resp = supabase.table("context_documents").select("*").eq("user_id", user.id).execute()
-            if docs_resp.data:
-                org_context = "ORGANIZATION CONTEXT DOCUMENTS:\n\n"
-                for doc in docs_resp.data:
-                    # Download the file from Supabase storage
-                    file_path = doc.get("storage_path")
-                    file_name = doc.get("file_name")
-                    if file_path:
-                        try:
-                            file_data = supabase.storage.from_("context_documents").download(file_path)
-                            org_context += f"--- Document: {file_name} ---\n{file_data.decode('utf-8', errors='replace')}\n\n"
-                        except Exception as dl_err:
-                            logger.warning(f"Failed to download context doc {file_name}: {dl_err}")
-        except Exception as e:
-            logger.warning(f"Failed to fetch organization documents: {e}")
+    use_docs = bool(payload.use_org_docs and user)
 
     results = []
     for claim_obj in claims_to_check:
@@ -1132,92 +1667,53 @@ async def fact_check_claims(payload: FactCheckRequest, user=Depends(get_current_
         if not claim_text.strip():
             continue
 
-        # Step 1: Search for evidence
-        evidence = ""
-        sources = []
-        if SERPER_API_KEY:
-            try:
-                search_resp = await asyncio.to_thread(
-                    requests.post,
-                    "https://google.serper.dev/search",
-                    headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
-                    json={"q": claim_text, "num": 5},
-                    timeout=10.0
-                )
-                if search_resp.status_code == 200:
-                    search_data = search_resp.json()
-                    organic = search_data.get("organic", [])
-                    for item in organic[:5]:
-                        title = item.get("title", "")
-                        snippet = item.get("snippet", "")
-                        link = item.get("link", "")
-                        evidence += f"Source: {title}\n{snippet}\nURL: {link}\n\n"
-                        sources.append({"title": title, "url": link, "snippet": snippet})
-                    # Also check knowledge graph
-                    kg = search_data.get("knowledgeGraph", {})
-                    if kg:
-                        evidence += f"Knowledge Graph: {kg.get('title', '')} — {kg.get('description', '')}\n"
-            except Exception as search_err:
-                logger.warning("Serper search failed for claim: %s", search_err)
-
-        # Step 2: AI evaluation
-        eval_system = (
-            "You are a rigorous fact-checker. Evaluate the following claim against the provided evidence. "
-            "You MUST return a JSON object with:\n"
-            '{"verdict": "TRUE|FALSE|MISLEADING|UNVERIFIABLE", '
-            '"confidence": 0.0-1.0, '
-            '"explanation": "brief explanation of your reasoning", '
-            '"key_evidence": "the most relevant piece of evidence"}\n\n'
-            "RULES:\n"
-            "- TRUE: The claim is factually correct based on evidence\n"
-            "- FALSE: The claim is demonstrably incorrect\n"
-            "- MISLEADING: The claim contains partial truth but is presented in a misleading way\n"
-            "- UNVERIFIABLE: Insufficient evidence to verify or deny the claim\n"
-            "- Generalizations without specific data should be UNVERIFIABLE\n"
-            "- Actively look for counterevidence\n"
-            "- Return ONLY the JSON object, no other text."
-        )
-
-        eval_prompt = f"Claim: {claim_text}\n\n"
-        if evidence:
-            eval_prompt += f"Web Evidence:\n{evidence}\n"
-        
-        if org_context:
-            eval_prompt += f"Internal Organization Evidence:\n{org_context}\n"
-            
-        if not evidence and not org_context:
-            eval_prompt += "No external evidence available. Use your knowledge base only.\n"
-
-        try:
-            eval_result = await _call_ai(eval_system, eval_prompt)
-            eval_result = eval_result.strip()
-            if eval_result.startswith("```"):
-                eval_result = eval_result.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-            verdict_data = json.loads(eval_result)
-            results.append({
-                "claim": claim_text,
-                "speaker": claim_obj.get("speaker", "") if isinstance(claim_obj, dict) else "",
-                "category": claim_obj.get("category", "") if isinstance(claim_obj, dict) else "",
-                "verdict": verdict_data.get("verdict", "UNVERIFIABLE"),
-                "confidence": verdict_data.get("confidence", 0.5),
-                "explanation": verdict_data.get("explanation", ""),
-                "key_evidence": verdict_data.get("key_evidence", ""),
-                "sources": sources,
-                "used_web_search": bool(evidence),
-            })
-        except (json.JSONDecodeError, Exception) as eval_err:
-            logger.warning("Fact-check evaluation failed for claim '%s': %s", claim_text[:50], eval_err)
-            results.append({
-                "claim": claim_text,
-                "speaker": claim_obj.get("speaker", "") if isinstance(claim_obj, dict) else "",
-                "verdict": "UNVERIFIABLE",
-                "confidence": 0.0,
-                "explanation": "Evaluation failed.",
-                "sources": sources,
-                "used_web_search": bool(evidence),
-            })
+        doc_chunks = await _retrieve_relevant_chunks(user.id, claim_text) if use_docs else []
+        results.append(await _fact_check_single_claim(claim_obj, doc_chunks))
 
     return {"results": results}
+
+
+# ---------------------------------------------------------------------------
+# Synthesis Engine — Cross-Reference & Fact-Check (logged-in users only)
+# ---------------------------------------------------------------------------
+class SynthesisCrossReferenceRequest(BaseModel):
+    transcript: str
+    context: Optional[dict] = None
+
+
+@app.post("/api/synthesis/cross-reference")
+async def synthesis_cross_reference(payload: SynthesisCrossReferenceRequest, user=Depends(get_current_user)):
+    """Cross-reference a Synthesis Engine transcript against the logged-in user's uploaded
+    support documents (vector RAG) and the web (Serper), claim by claim.
+
+    Reuses the same claim-detection and fact-check pipeline as livestream fact-checking —
+    just applied to a transcript the user already produced via /api/transcribe.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Sign in required to use cross-referencing.")
+    if not payload.transcript.strip():
+        raise HTTPException(status_code=400, detail="Transcript is empty.")
+
+    detect_result = await detect_claims(ClaimDetectionRequest(
+        transcript=payload.transcript,
+        context=payload.context,
+    ))
+    claims_to_check = detect_result.get("claims", [])
+
+    if not claims_to_check:
+        return {"results": [], "message": "No verifiable claims detected."}
+
+    results = []
+    for claim_obj in claims_to_check:
+        claim_text = claim_obj.get("claim", "") if isinstance(claim_obj, dict) else str(claim_obj)
+        if not claim_text.strip():
+            continue
+        doc_chunks = await _retrieve_relevant_chunks(user.id, claim_text)
+        results.append(await _fact_check_single_claim(claim_obj, doc_chunks))
+
+    return {"results": results}
+
+
 # ---------------------------------------------------------------------------
 # LiveStream — Meeting Package Generator
 # ---------------------------------------------------------------------------
