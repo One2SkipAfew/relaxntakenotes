@@ -1,10 +1,21 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import { X, Mail, Lock, User, Building, MapPin, AlertCircle } from 'lucide-react';
 import './AuthModal.css';
 
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    return "http://localhost:7860";
+  return "";
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
 export default function AuthModal({ isOpen, onClose, defaultTab = 'signin' }) {
+  const navigate = useNavigate();
   const [tab, setTab] = useState(defaultTab); // 'signin' or 'register'
   
   const [email, setEmail] = useState('');
@@ -54,22 +65,36 @@ export default function AuthModal({ isOpen, onClose, defaultTab = 'signin' }) {
           throw new Error("Please fill in all required fields");
         }
 
-        const { error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              first_name: firstName,
-              last_name: lastName,
-              organization_name: orgName,
-              organization_address: orgAddress
-            }
-          }
+        const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email,
+            password,
+            first_name: firstName,
+            last_name: lastName,
+            organization_name: orgName,
+            organization_address: orgAddress || null,
+          }),
         });
 
-        if (signUpError) throw signUpError;
-        
-        setSuccessMsg('Registration successful! Please check your email to confirm your account.');
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || 'Registration failed');
+        }
+
+        if (data.status === 'confirmed') {
+          const { error: setSessionError } = await supabase.auth.setSession({
+            access_token: data.access_token,
+            refresh_token: data.refresh_token,
+          });
+          if (setSessionError) throw setSessionError;
+
+          onClose();
+          navigate('/dashboard');
+        } else {
+          setSuccessMsg('Registration successful! Please check your email to confirm your account.');
+        }
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
@@ -77,9 +102,28 @@ export default function AuthModal({ isOpen, onClose, defaultTab = 'signin' }) {
         });
 
         if (signInError) throw signInError;
-        
+
         onClose(); // Close modal on successful login
+        navigate('/dashboard');
       }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`,
+        },
+      });
+      if (error) throw error;
     } catch (err) {
       setError(err.message);
     } finally {
@@ -218,6 +262,20 @@ export default function AuthModal({ isOpen, onClose, defaultTab = 'signin' }) {
 
           <button type="submit" className="auth-submit-btn" disabled={loading}>
             {loading ? 'Processing...' : (tab === 'signin' ? 'Sign In' : 'Create Account')}
+          </button>
+
+          <div className="auth-divider">
+            <span>or</span>
+          </div>
+
+          <button 
+            type="button" 
+            className="auth-google-btn" 
+            onClick={handleGoogleLogin} 
+            disabled={loading}
+          >
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google Logo" className="google-icon" />
+            Continue with Google
           </button>
         </form>
 

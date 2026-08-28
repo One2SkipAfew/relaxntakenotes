@@ -3,13 +3,21 @@
 -- Create usage_logs table to track API usage and enforce budget constraints
 CREATE TABLE IF NOT EXISTS usage_logs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_hash TEXT NOT NULL,       -- SHA-256 hash of IP + User-Agent
+  user_hash TEXT,       -- SHA-256 hash of IP + User-Agent (null for rows attributed via user_id only, e.g. livestream)
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL, -- Set when the request was made by a logged-in user
   duration_seconds INTEGER NOT NULL, -- Length of audio transcribed in seconds
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Index user_hash and created_at to speed up limit checks
+-- Relax legacy NOT NULL constraint on user_hash for pre-existing databases
+ALTER TABLE usage_logs ALTER COLUMN user_hash DROP NOT NULL;
+
+-- Add user_id to pre-existing databases that already had usage_logs without it
+ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+
+-- Index user_hash, user_id and created_at to speed up limit checks / stats lookups
 CREATE INDEX IF NOT EXISTS idx_usage_logs_user_hash ON usage_logs(user_hash);
+CREATE INDEX IF NOT EXISTS idx_usage_logs_user_id ON usage_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_usage_logs_created_at ON usage_logs(created_at);
 
 -- Set up Row Level Security (RLS) to restrict unauthorized direct access if needed,
@@ -175,3 +183,85 @@ DROP TRIGGER IF EXISTS on_session_created ON livestream_sessions;
 CREATE TRIGGER on_session_created
   AFTER INSERT ON livestream_sessions
   FOR EACH ROW EXECUTE PROCEDURE public.limit_saved_sessions();
+
+-- Function to log livestream session duration into usage_logs so it counts toward
+-- a user's lifetime dashboard stats, independent of the 2-session retention cap above.
+CREATE OR REPLACE FUNCTION public.log_livestream_usage()
+RETURNS trigger AS $$
+BEGIN
+  IF new.user_id IS NOT NULL AND new.duration_seconds IS NOT NULL THEN
+    INSERT INTO public.usage_logs (user_id, duration_seconds)
+    VALUES (new.user_id, new.duration_seconds);
+  END IF;
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_livestream_session_usage ON livestream_sessions;
+CREATE TRIGGER on_livestream_session_usage
+  AFTER INSERT ON livestream_sessions
+  FOR EACH ROW EXECUTE PROCEDURE public.log_livestream_usage();
+
+-- ==============================================================================
+-- PHASE 3: Vector RAG for Support Documents
+-- ==============================================================================
+
+-- Enable pgvector for embedding storage + similarity search
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Chunked, embedded text for each uploaded context document — powers real
+-- retrieval (vs. dumping whole documents into prompts) for fact-check cross-referencing.
+CREATE TABLE IF NOT EXISTS document_chunks (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  document_id UUID REFERENCES context_documents(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  chunk_text TEXT NOT NULL,
+  embedding vector(384), -- sentence-transformers/all-MiniLM-L6-v2 dimension
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_chunks_user_id ON document_chunks(user_id);
+CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id ON document_chunks(document_id);
+
+-- Cosine-similarity index for fast nearest-neighbor search
+CREATE INDEX IF NOT EXISTS idx_document_chunks_embedding ON document_chunks
+  USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can manage own chunks" ON document_chunks;
+CREATE POLICY "Users can manage own chunks" ON document_chunks
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Backend can manage all chunks" ON document_chunks;
+CREATE POLICY "Backend can manage all chunks" ON document_chunks
+  FOR ALL USING (true) WITH CHECK (true);
+
+-- Similarity search RPC — PostgREST can't evaluate the <=> operator directly,
+-- so retrieval is wrapped in a Postgres function and called via .rpc(...).
+CREATE OR REPLACE FUNCTION public.match_document_chunks(
+  query_embedding vector(384),
+  match_user_id UUID,
+  match_count INT DEFAULT 5
+)
+RETURNS TABLE (
+  chunk_text TEXT,
+  file_name TEXT,
+  similarity FLOAT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    dc.chunk_text,
+    cd.file_name,
+    1 - (dc.embedding <=> query_embedding) AS similarity
+  FROM document_chunks dc
+  JOIN context_documents cd ON cd.id = dc.document_id
+  WHERE dc.user_id = match_user_id
+  ORDER BY dc.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
