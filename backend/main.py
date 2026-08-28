@@ -72,7 +72,7 @@ HF_ENDPOINT_URL = os.getenv("HF_ENDPOINT_URL", "")  # Legacy fallback — leave 
 # Budget limits — tripled for production capacity
 MONTHLY_LIMIT_MINUTES = int(os.getenv("MONTHLY_LIMIT_MINUTES", "10000"))
 USER_MONTHLY_LIMIT_MINUTES = int(os.getenv("USER_MONTHLY_LIMIT_MINUTES", "180"))
-MAX_RECORDING_DURATION_MINUTES = int(os.getenv("MAX_RECORDING_DURATION_MINUTES", "30"))
+MAX_RECORDING_DURATION_MINUTES = int(os.getenv("MAX_RECORDING_DURATION_MINUTES", "120"))  # 2 hours
 
 # Fact-checking API keys (optional)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
