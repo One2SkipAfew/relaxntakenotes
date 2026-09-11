@@ -182,7 +182,7 @@ export default function LiveStreamView({ onBack }) {
       const ws = new WebSocket(getWsUrl());
       wsRef.current = ws;
 
-      ws.onopen = () => {
+      ws.onopen = async () => {
         setConnectionStatus("connected");
         setIsStreaming(true);
         setDuration(0);
@@ -228,20 +228,36 @@ export default function LiveStreamView({ onBack }) {
 
         const source = audioContext.createMediaStreamSource(stream);
 
-        // Use ScriptProcessorNode (deprecated but widely supported) or AudioWorklet
-        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+        // Use AudioWorklet instead of the deprecated ScriptProcessorNode
+        const workletCode = `
+          class PcmProcessor extends AudioWorkletProcessor {
+            process(inputs, outputs, parameters) {
+              const input = inputs[0];
+              if (input && input.length > 0) {
+                const channelData = input[0];
+                const pcmData = new Int16Array(channelData.length);
+                for (let i = 0; i < channelData.length; i++) {
+                  const s = Math.max(-1, Math.min(1, channelData[i]));
+                  pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+                }
+                this.port.postMessage(pcmData.buffer);
+              }
+              return true;
+            }
+          }
+          registerProcessor('pcm-processor', PcmProcessor);
+        `;
+        const blob = new Blob([workletCode], { type: 'application/javascript' });
+        const workletUrl = URL.createObjectURL(blob);
+        
+        // Ensure ws connection open callback works properly as an async block inside ws.onopen
+        await audioContext.audioWorklet.addModule(workletUrl);
+        const processor = new AudioWorkletNode(audioContext, 'pcm-processor');
         processorRef.current = processor;
 
-        processor.onaudioprocess = (e) => {
+        processor.port.onmessage = (e) => {
           if (ws.readyState === WebSocket.OPEN && !isPaused) {
-            const inputData = e.inputBuffer.getChannelData(0);
-            // Convert float32 to int16 PCM
-            const pcmData = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++) {
-              const s = Math.max(-1, Math.min(1, inputData[i]));
-              pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-            }
-            ws.send(pcmData.buffer);
+            ws.send(e.data);
           }
         };
 
