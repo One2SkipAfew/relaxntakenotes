@@ -1409,8 +1409,7 @@ async def livestream_websocket(websocket: WebSocket):
     is_closing = False
 
     try:
-        # Create Deepgram live transcription connection
-        dg_connection = deepgram_client.listen.websocket.v("1")
+        dg_connection = deepgram_client.listen.live.v("1")
 
         # Event handler: transcript received from Deepgram
         async def on_message(self, result, **kwargs):
