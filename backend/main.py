@@ -1409,10 +1409,11 @@ async def livestream_websocket(websocket: WebSocket):
     is_closing = False
 
     try:
-        dg_connection = deepgram_client.listen.asynclive.v("1")
+        dg_connection = deepgram_client.listen.live.v("1")
+        loop = asyncio.get_running_loop()
 
         # Event handler: transcript received from Deepgram
-        async def on_message(self, result, **kwargs):
+        def on_message(self, result, **kwargs):
             try:
                 channel = result.channel
                 if channel and channel.alternatives and len(channel.alternatives) > 0:
@@ -1439,26 +1440,26 @@ async def livestream_websocket(websocket: WebSocket):
                             "speech_final": getattr(result, 'speech_final', False),
                         }
                         if not is_closing:
-                            await websocket.send_json(msg)
+                            asyncio.run_coroutine_threadsafe(websocket.send_json(msg), loop)
             except Exception as e:
                 logger.warning("Error sending transcript to client: %s", e)
 
-        async def on_error(self, error, **kwargs):
+        def on_error(self, error, **kwargs):
             logger.error("Deepgram live error: %s", error)
             try:
                 if not is_closing:
-                    await websocket.send_json({"type": "error", "message": str(error)})
+                    asyncio.run_coroutine_threadsafe(websocket.send_json({"type": "error", "message": str(error)}), loop)
             except Exception:
                 pass
 
-        async def on_close(self, close, **kwargs):
+        def on_close(self, close, **kwargs):
             logger.info("Deepgram live connection closed")
 
-        async def on_open(self, open, **kwargs):
+        def on_open(self, open, **kwargs):
             logger.info("Deepgram live connection opened")
             try:
                 if not is_closing:
-                    await websocket.send_json({"type": "status", "message": "Deepgram connection established. Listening..."})
+                    asyncio.run_coroutine_threadsafe(websocket.send_json({"type": "status", "message": "Deepgram connection established. Listening..."}), loop)
             except Exception:
                 pass
 
@@ -1484,7 +1485,7 @@ async def livestream_websocket(websocket: WebSocket):
         )
 
         # Start the Deepgram live connection
-        started = await dg_connection.start(options)
+        started = dg_connection.start(options)
         if not started:
             await websocket.send_json({"type": "error", "message": "Failed to start Deepgram live connection."})
             await websocket.close()
@@ -1499,7 +1500,7 @@ async def livestream_websocket(websocket: WebSocket):
 
                 if "bytes" in data:
                     # Binary audio data — forward to Deepgram
-                    await dg_connection.send(data["bytes"])
+                    dg_connection.send(data["bytes"])
                 elif "text" in data:
                     # Control messages from client
                     try:
@@ -1531,7 +1532,7 @@ async def livestream_websocket(websocket: WebSocket):
         is_closing = True
         if dg_connection:
             try:
-                await dg_connection.finish()
+                dg_connection.finish()
             except Exception:
                 pass
         try:
