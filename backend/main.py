@@ -1403,123 +1403,113 @@ async def livestream_websocket(websocket: WebSocket):
         await websocket.close()
         return
 
-    # We'll use an async approach: open a Deepgram live connection,
-    # forward audio chunks, and relay transcript events back.
-    dg_connection = None
+    # We'll use an async approach with aiohttp to connect to Deepgram
+    # this bypasses all the deepgram-sdk websockets and thread bugs.
     is_closing = False
+    import aiohttp
 
     try:
-        dg_connection = deepgram_client.listen.live.v("1")
-        loop = asyncio.get_running_loop()
-
-        # Event handler: transcript received from Deepgram
-        def on_message(self, result, **kwargs):
-            try:
-                channel = result.channel
-                if channel and channel.alternatives and len(channel.alternatives) > 0:
-                    alt = channel.alternatives[0]
-                    transcript_text = alt.transcript
-                    if transcript_text.strip():
-                        # Determine speaker from words metadata if available
-                        speaker = 0
-                        if alt.words and len(alt.words) > 0:
-                            first_word = alt.words[0]
-                            speaker = getattr(first_word, 'speaker', 0) or 0
-
-                        is_final = result.is_final
-                        start_time = result.start if hasattr(result, 'start') else 0.0
-                        duration = result.duration if hasattr(result, 'duration') else 0.0
-
-                        msg = {
-                            "type": "transcript",
-                            "is_final": is_final,
-                            "text": transcript_text,
-                            "speaker": speaker,
-                            "start": start_time,
-                            "end": start_time + duration,
-                            "speech_final": getattr(result, 'speech_final', False),
-                        }
-                        if not is_closing:
-                            asyncio.run_coroutine_threadsafe(websocket.send_json(msg), loop)
-            except Exception as e:
-                logger.warning("Error sending transcript to client: %s", e)
-
-        def on_error(self, error, **kwargs):
-            logger.error("Deepgram live error: %s", error)
-            try:
-                if not is_closing:
-                    asyncio.run_coroutine_threadsafe(websocket.send_json({"type": "error", "message": str(error)}), loop)
-            except Exception:
-                pass
-
-        def on_close(self, close, **kwargs):
-            logger.info("Deepgram live connection closed")
-
-        def on_open(self, open, **kwargs):
-            logger.info("Deepgram live connection opened")
-            try:
-                if not is_closing:
-                    asyncio.run_coroutine_threadsafe(websocket.send_json({"type": "status", "message": "Deepgram connection established. Listening..."}), loop)
-            except Exception:
-                pass
-
-        # Register event handlers
-        dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
-        dg_connection.on(LiveTranscriptionEvents.Error, on_error)
-        dg_connection.on(LiveTranscriptionEvents.Close, on_close)
-        dg_connection.on(LiveTranscriptionEvents.Open, on_open)
-
-        # Configure live transcription options
-        options = LiveOptions(
-            model="nova-2",
-            language="en",
-            smart_format=True,
-            punctuate=True,
-            diarize=True,
-            interim_results=True,
-            utterance_end_ms="1500",
-            vad_events=True,
-            encoding="linear16",
-            sample_rate=16000,
-            channels=1,
+        dg_url = (
+            "wss://api.deepgram.com/v1/listen?"
+            "model=nova-2&language=en&smart_format=true&punctuate=true&"
+            "diarize=true&interim_results=true&utterance_end_ms=1500&"
+            "vad_events=true&encoding=linear16&sample_rate=16000&channels=1"
         )
-
-        # Start the Deepgram live connection
-        started = dg_connection.start(options)
-        if not started:
-            await websocket.send_json({"type": "error", "message": "Failed to start Deepgram live connection."})
-            await websocket.close()
-            return
-
-        await websocket.send_json({"type": "status", "message": "Ready to receive audio."})
-
-        # Main loop: receive audio chunks from client, forward to Deepgram
-        while True:
+        
+        async with aiohttp.ClientSession() as session:
             try:
-                data = await websocket.receive()
+                # Open Deepgram connection
+                dg_ws = await session.ws_connect(
+                    dg_url, 
+                    headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"}
+                )
+            except aiohttp.WSServerHandshakeError as e:
+                logger.error("Deepgram handshake failed: %s %s", e.status, e.message)
+                if not is_closing:
+                    await websocket.send_json({
+                        "type": "error", 
+                        "message": f"Deepgram connection rejected (HTTP {e.status}). Please check if your API key is valid and has sufficient credits."
+                    })
+                    await websocket.close()
+                return
+            except Exception as e:
+                logger.error("Deepgram connection failed: %s", e)
+                if not is_closing:
+                    await websocket.send_json({"type": "error", "message": f"Failed to connect to Deepgram: {str(e)}"})
+                    await websocket.close()
+                return
 
-                if "bytes" in data:
-                    # Binary audio data — forward to Deepgram
-                    dg_connection.send(data["bytes"])
-                elif "text" in data:
-                    # Control messages from client
+            await websocket.send_json({"type": "status", "message": "Ready to receive audio."})
+
+            async def receive_from_dg():
+                nonlocal is_closing
+                try:
+                    async for msg in dg_ws:
+                        if msg.type == aiohttp.WSMsgType.TEXT:
+                            data = json.loads(msg.data)
+                            if data.get("type") == "Results":
+                                channel = data.get("channel", {})
+                                alts = channel.get("alternatives", [])
+                                if alts:
+                                    alt = alts[0]
+                                    transcript = alt.get("transcript", "")
+                                    if transcript.strip():
+                                        is_final = data.get("is_final", False)
+                                        start_time = data.get("start", 0.0)
+                                        duration = data.get("duration", 0.0)
+                                        speaker = 0
+                                        words = alt.get("words", [])
+                                        if words:
+                                            speaker = words[0].get("speaker", 0)
+                                        
+                                        out_msg = {
+                                            "type": "transcript",
+                                            "is_final": is_final,
+                                            "text": transcript,
+                                            "speaker": speaker,
+                                            "start": start_time,
+                                            "end": start_time + duration,
+                                            "speech_final": data.get("speech_final", False),
+                                        }
+                                        if not is_closing:
+                                            await websocket.send_json(out_msg)
+                except Exception as e:
+                    logger.error("Deepgram receive error: %s", e)
+                    if not is_closing:
+                        try:
+                            await websocket.send_json({"type": "error", "message": f"Deepgram receive error: {str(e)}"})
+                        except: pass
+
+            async def forward_to_dg():
+                nonlocal is_closing
+                try:
+                    while True:
+                        data = await websocket.receive()
+                        if "bytes" in data:
+                            await dg_ws.send_bytes(data["bytes"])
+                        elif "text" in data:
+                            try:
+                                control = json.loads(data["text"])
+                                if control.get("type") == "stop":
+                                    logger.info("Client requested stop")
+                                    break
+                            except json.DecodeError:
+                                pass
+                except WebSocketDisconnect:
+                    logger.info("LiveStream WebSocket disconnected")
+                except Exception as e:
+                    logger.warning("WebSocket receive error: %s", e)
+                finally:
+                    is_closing = True
                     try:
-                        control = json.loads(data["text"])
-                        if control.get("type") == "stop":
-                            logger.info("Client requested stop")
-                            break
-                        elif control.get("type") == "configure":
-                            # Client can send audio config (sample rate, encoding, etc.)
-                            logger.info("Client config: %s", control)
-                    except json.DecodeError:
-                        pass
+                        await dg_ws.close()
+                    except: pass
 
-            except WebSocketDisconnect:
-                logger.info("LiveStream WebSocket disconnected")
-                break
-            except Exception as recv_err:
-                logger.warning("WebSocket receive error: %s", recv_err)
-                break
+            # Run both loops concurrently
+            await asyncio.gather(
+                receive_from_dg(),
+                forward_to_dg()
+            )
 
     except Exception as exc:
         logger.exception("LiveStream WebSocket error")
@@ -1530,11 +1520,6 @@ async def livestream_websocket(websocket: WebSocket):
             pass
     finally:
         is_closing = True
-        if dg_connection:
-            try:
-                dg_connection.finish()
-            except Exception:
-                pass
         try:
             await websocket.close()
         except Exception:
