@@ -735,12 +735,13 @@ async def register_user(payload: RegisterRequest):
 
     try:
         create_resp = await asyncio.to_thread(
-            supabase.auth.admin.create_user,
+            supabase.auth.sign_up,
             {
                 "email": payload.email,
                 "password": payload.password,
-                "email_confirm": not REQUIRE_EMAIL_CONFIRMATION,
-                "user_metadata": user_metadata,
+                "options": {
+                    "data": user_metadata
+                },
             },
         )
     except Exception as exc:
