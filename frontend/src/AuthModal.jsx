@@ -65,31 +65,22 @@ export default function AuthModal({ isOpen, onClose, defaultTab = 'signin' }) {
           throw new Error("Please fill in all required fields");
         }
 
-        const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email,
-            password,
-            first_name: firstName,
-            last_name: lastName,
-            organization_name: orgName,
-            organization_address: orgAddress || null,
-          }),
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              first_name: firstName,
+              last_name: lastName,
+              organization_name: orgName,
+              organization_address: orgAddress || null,
+            }
+          }
         });
 
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.detail || 'Registration failed');
-        }
+        if (signUpError) throw signUpError;
 
-        if (data.status === 'confirmed') {
-          const { error: setSessionError } = await supabase.auth.setSession({
-            access_token: data.access_token,
-            refresh_token: data.refresh_token,
-          });
-          if (setSessionError) throw setSessionError;
-
+        if (data.session) {
           onClose();
           navigate('/dashboard');
         } else {
